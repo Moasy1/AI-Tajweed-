@@ -8,7 +8,7 @@
 import 'dotenv/config';
 import path from 'path';
 import { app, initDatabase } from './src/express-app.js';
-import { isDatabaseConnected } from './src/db/connection.js';
+import { isSupabaseConnected } from './src/db/supabase.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -36,7 +36,7 @@ async function startServer() {
 
   const httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Server] Running on http://0.0.0.0:${PORT}`);
-    console.log(`[Server] Database: ${isDatabaseConnected() ? '✅ Connected' : '⚠️  Not connected (MONGODB_URI not set)'}`);
+    console.log(`[Server] Database: ${isSupabaseConnected() ? '✅ Supabase connected' : '⚠️  Not connected (add SUPABASE_URL + SUPABASE_ANON_KEY to .env)'}`);
     console.log(`[Server] Open http://localhost:${PORT} in your browser`);
   });
 

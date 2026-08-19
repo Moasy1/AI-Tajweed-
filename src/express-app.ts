@@ -1,16 +1,12 @@
 /**
- * express-app.ts
- * Pure Express app — routes only, no server.listen(), no WebSocket.
- * Shared between:
- *   - server.ts (local dev with Vite + WebSocket)
- *   - api/index.ts (Vercel serverless functions)
+ * src/express-app.ts
+ * Shared Express HTTP routes — uses Supabase for all data persistence.
+ * Shared between server.ts (local dev) and api/index.ts (Vercel).
  */
 import express from 'express';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
-import { connectToDatabase, isDatabaseConnected } from './db/connection.js';
-import { RecitationSession } from './db/models/RecitationSession.js';
-import { IjazahApplication } from './db/models/IjazahApplication.js';
+import { getSupabase, isSupabaseConnected } from './db/supabase.js';
 
 export const app = express();
 
@@ -22,17 +18,13 @@ const upload = multer({
       'audio/webm', 'audio/ogg', 'audio/mp4',
       'audio/mpeg', 'audio/wav', 'application/octet-stream',
     ];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Unsupported audio format: ${file.mimetype}`));
-    }
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error(`Unsupported audio format: ${file.mimetype}`));
   },
 });
 
 app.use(express.json());
 
-// Rate limiter — 10 AI requests per minute per IP
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
@@ -47,33 +39,48 @@ const aiLimiter = rateLimit({
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
-    database: isDatabaseConnected() ? 'connected' : 'disconnected',
+    database: isSupabaseConnected() ? 'connected' : 'disconnected',
+    provider: isSupabaseConnected() ? 'supabase' : 'none',
     timestamp: new Date().toISOString(),
   });
 });
 
 // ────────────────────────────────────────────────
-// 1. Dashboard Stats
+// 1. Dashboard Stats — real data from Supabase
 // ────────────────────────────────────────────────
 app.get('/api/dashboard/stats', async (_req, res) => {
   try {
-    if (isDatabaseConnected()) {
-      const [totalSessions, avgAccuracyResult, latestSessions] = await Promise.all([
-        RecitationSession.countDocuments(),
-        RecitationSession.aggregate([{ $group: { _id: null, avg: { $avg: '$score' } } }]),
-        RecitationSession.find().sort({ createdAt: -1 }).limit(5).select('surah score createdAt'),
+    const supabase = getSupabase();
+
+    if (supabase) {
+      const [{ count: totalSessions }, { data: avgData }, { data: latestSessions }] = await Promise.all([
+        supabase.from('recitation_sessions').select('*', { count: 'exact', head: true }),
+        supabase.from('recitation_sessions').select('score'),
+        supabase.from('recitation_sessions')
+          .select('surah, score, created_at')
+          .order('created_at', { ascending: false })
+          .limit(5),
       ]);
-      const avgAccuracy = avgAccuracyResult[0]?.avg ?? 0;
+
+      const total = totalSessions ?? 0;
+      const avgAccuracy = avgData && avgData.length > 0
+        ? avgData.reduce((sum, row) => sum + (row.score || 0), 0) / avgData.length
+        : 0;
+
       res.json({
         stats: [
-          { label: 'الآيات المحفوظة', value: String(totalSessions), iconName: 'Book', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
-          { label: 'ساعات التلاوة', value: (totalSessions * 0.5).toFixed(1), iconName: 'Clock', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+          { label: 'الآيات المحفوظة', value: String(total), iconName: 'Book', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+          { label: 'ساعات التلاوة', value: (total * 0.5).toFixed(1), iconName: 'Clock', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
           { label: 'دقة التجويد', value: `${avgAccuracy.toFixed(0)}%`, iconName: 'Activity', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-          { label: 'جلسات التلاوة', value: String(totalSessions), iconName: 'Flame', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
+          { label: 'جلسات التلاوة', value: String(total), iconName: 'Flame', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
         ],
-        dailyTarget: { surah: latestSessions[0]?.surah || 'سورة الكهف', verses: 'الآيات 1 - 10', progress: Math.min(100, totalSessions * 10) },
-        recentSessions: latestSessions,
-        alerts: [{ type: 'success', title: 'البيانات محفوظة', description: 'يتم الآن حفظ جميع جلسات التلاوة في قاعدة البيانات.' }],
+        dailyTarget: {
+          surah: latestSessions?.[0]?.surah || 'سورة الكهف',
+          verses: 'الآيات 1 - 10',
+          progress: Math.min(100, total * 10),
+        },
+        recentSessions: latestSessions || [],
+        alerts: [{ type: 'success', title: 'البيانات محفوظة', description: 'يتم حفظ جميع جلسات التلاوة في Supabase.' }],
       });
     } else {
       res.json({
@@ -85,7 +92,7 @@ app.get('/api/dashboard/stats', async (_req, res) => {
         ],
         dailyTarget: { surah: 'سورة الكهف', verses: 'الآيات 1 - 10', progress: 0 },
         recentSessions: [],
-        alerts: [{ type: 'warning', title: 'قاعدة البيانات غير متصلة', description: 'يرجى إعداد MONGODB_URI لحفظ بياناتك.' }],
+        alerts: [{ type: 'warning', title: 'قاعدة البيانات غير متصلة', description: 'يرجى إعداد SUPABASE_URL و SUPABASE_ANON_KEY في ملف .env' }],
       });
     }
   } catch (error) {
@@ -95,7 +102,7 @@ app.get('/api/dashboard/stats', async (_req, res) => {
 });
 
 // ────────────────────────────────────────────────
-// 2. Tajweed Analysis (Audio → AI → Save to DB)
+// 2. Tajweed Analysis → AI → Save to Supabase
 // ────────────────────────────────────────────────
 app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, res) => {
   try {
@@ -107,7 +114,9 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const mimeType = req.file.mimetype === 'application/octet-stream' ? 'audio/webm' : req.file.mimetype || 'audio/webm';
+    const mimeType = req.file.mimetype === 'application/octet-stream'
+      ? 'audio/webm'
+      : (req.file.mimetype || 'audio/webm');
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -159,13 +168,17 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
     resultText = resultText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
     const resultJson = JSON.parse(resultText);
 
-    // Persist to MongoDB
-    if (isDatabaseConnected()) {
-      try {
-        await RecitationSession.create({ surah: resultJson.surah, ayah: resultJson.ayah, score: resultJson.score, words: resultJson.words, mode: 'tajweed' });
-      } catch (dbErr) {
-        console.warn('[MongoDB] Failed to save session:', dbErr);
-      }
+    // Save to Supabase
+    const supabase = getSupabase();
+    if (supabase) {
+      const { error: dbError } = await supabase.from('recitation_sessions').insert({
+        surah: resultJson.surah,
+        ayah: resultJson.ayah || '',
+        score: Math.round(resultJson.score),
+        words: resultJson.words,
+        mode: 'tajweed',
+      });
+      if (dbError) console.warn('[Supabase] Failed to save session:', dbError.message);
     }
 
     res.json(resultJson);
@@ -188,7 +201,9 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const mimeType = req.file.mimetype === 'application/octet-stream' ? 'audio/webm' : req.file.mimetype || 'audio/webm';
+    const mimeType = req.file.mimetype === 'application/octet-stream'
+      ? 'audio/webm'
+      : (req.file.mimetype || 'audio/webm');
 
     const analyzeResponse = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -250,19 +265,26 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
 });
 
 // ────────────────────────────────────────────────
-// 4. Session History
+// 4. Session History (paginated)
 // ────────────────────────────────────────────────
 app.get('/api/sessions/history', async (req, res) => {
   try {
-    if (!isDatabaseConnected()) return res.json({ sessions: [], message: 'Database not connected' });
+    const supabase = getSupabase();
+    if (!supabase) return res.json({ sessions: [], message: 'Database not connected' });
+
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    const page = parseInt(req.query.page as string) || 1;
-    const skip = (page - 1) * limit;
-    const [sessions, total] = await Promise.all([
-      RecitationSession.find().sort({ createdAt: -1 }).skip(skip).limit(limit).select('surah ayah score mode createdAt'),
-      RecitationSession.countDocuments(),
-    ]);
-    res.json({ sessions, total, page, limit });
+    const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data: sessions, count, error } = await supabase
+      .from('recitation_sessions')
+      .select('id, surah, ayah, score, mode, created_at', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    res.json({ sessions: sessions || [], total: count ?? 0, page, limit });
   } catch (error) {
     console.error('Sessions history error:', error);
     res.status(500).json({ error: 'Failed to load session history' });
@@ -274,23 +296,44 @@ app.get('/api/sessions/history', async (req, res) => {
 // ────────────────────────────────────────────────
 app.get('/api/ijazah', async (_req, res) => {
   try {
-    if (!isDatabaseConnected()) return res.json({ applications: [] });
-    const applications = await IjazahApplication.find().sort({ createdAt: -1 });
-    res.json({ applications });
+    const supabase = getSupabase();
+    if (!supabase) return res.json({ applications: [] });
+
+    const { data, error } = await supabase
+      .from('ijazah_applications')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ applications: data || [] });
   } catch (error) {
+    console.error('Ijazah fetch error:', error);
     res.status(500).json({ error: 'Failed to load Ijazah applications' });
   }
 });
 
 app.post('/api/ijazah', async (req, res) => {
   try {
-    if (!isDatabaseConnected()) return res.status(503).json({ error: 'Database not connected' });
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ error: 'Database not connected' });
+
     const { surah, accuracy } = req.body;
-    if (!surah || accuracy === undefined) return res.status(400).json({ error: 'surah and accuracy are required' });
+    if (!surah || accuracy === undefined) {
+      return res.status(400).json({ error: 'surah and accuracy are required' });
+    }
+
     const status = accuracy >= 95 ? 'ai_approved' : accuracy >= 80 ? 'sheikh_review' : 'pending';
-    const application = await IjazahApplication.create({ surah, accuracy, status });
-    res.status(201).json({ application });
+
+    const { data, error } = await supabase
+      .from('ijazah_applications')
+      .insert({ surah, accuracy, status })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ application: data });
   } catch (error) {
+    console.error('Ijazah creation error:', error);
     res.status(500).json({ error: 'Failed to create Ijazah application' });
   }
 });
@@ -298,15 +341,13 @@ app.post('/api/ijazah', async (req, res) => {
 // ────────────────────────────────────────────────
 // Global error handler
 // ────────────────────────────────────────────────
-app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled server error:', err);
   res.status(500).json({ error: 'Internal server error', details: String(err) });
 });
 
-// DB connect function — called once per process (local dev or cold Vercel start)
-let dbInitialized = false;
-export async function initDatabase() {
-  if (dbInitialized) return;
-  dbInitialized = true;
-  await connectToDatabase();
+// No-op — Supabase is HTTP-based, no connection init needed
+export async function initDatabase(): Promise<void> {
+  // Trigger early initialization log
+  getSupabase();
 }
