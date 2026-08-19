@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Tajawal', system-ui, sans-serif;
+  --font-arabic: 'Amiri', serif;
+  --ease-bounce: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
