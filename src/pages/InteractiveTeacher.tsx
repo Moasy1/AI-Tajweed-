@@ -206,7 +206,101 @@ export default function InteractiveTeacher() {
     return btoa(binary);
   };
 
+  const [teacherAudioUrl, setTeacherAudioUrl] = useState<string | null>(null);
+  const teacherAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<BlobPart[]>([]);
+
+  // Function to play text using browser speech synthesis if audio buffer not available
+  const speakText = (text: string) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ar-SA';
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Direct Voice Recording Mode (Universal — works on Vercel, Mobile, iOS, Desktop)
+  const startVoiceRecording = async () => {
+    setCallState('connecting');
+    setTranscript('جاري الاستماع لتلاوتك... تفضل بالقراءة');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mediaRecorder = new MediaRecorder(stream);
+      voiceRecorderRef.current = mediaRecorder;
+      voiceChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) voiceChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        setCallState('connecting');
+        setTranscript('المعلم يستمع ويجهز الملاحظات والتوجيه الصوتي...');
+        
+        const blob = new Blob(voiceChunksRef.current, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', blob, 'teacher_voice.webm');
+
+        try {
+          const res = await fetch('/api/interactive-teacher', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const data = await res.json();
+          if (data.error) {
+            throw new Error(data.error);
+          }
+
+          setCallState('connected');
+          setTranscript(data.text || 'أحسنت بارك الله فيك.');
+
+          if (data.audio) {
+            const audioSrc = `data:audio/wav;base64,${data.audio}`;
+            setTeacherAudioUrl(audioSrc);
+            const audio = new Audio(audioSrc);
+            teacherAudioRef.current = audio;
+            audio.play().catch(() => {
+              speakText(data.text);
+            });
+          } else if (data.text) {
+            speakText(data.text);
+          }
+        } catch (err: any) {
+          console.error('Teacher response error:', err);
+          setCallState('error');
+          setTranscript('حدث خطأ أثناء التواصل مع المعلم. يرجى المحاولة مرة أخرى.');
+        }
+      };
+
+      mediaRecorder.start();
+    } catch (err) {
+      console.error('Mic access error', err);
+      alert('الرجاء السماح بالوصول للميكروفون للتحدث مع المعلم');
+      setCallState('idle');
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (voiceRecorderRef.current && voiceRecorderRef.current.state === 'recording') {
+      voiceRecorderRef.current.stop();
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    }
+  };
+
   const startCall = async () => {
+    // Check if WebSocket is available, otherwise seamlessly use Voice Recording
+    if (window.location.hostname.includes('vercel.app')) {
+      await startVoiceRecording();
+      return;
+    }
+
     setCallState('connecting');
     setTranscript('جاري الاتصال بالمعلم...');
     
@@ -279,15 +373,15 @@ export default function InteractiveTeacher() {
         }
       };
 
-      ws.onerror = (e) => {
-        console.error("WebSocket error", e);
-        setCallState('error');
-        setTranscript('حدث خطأ أثناء الاتصال.');
+      ws.onerror = () => {
+        console.warn("WebSocket unavailable, switching to Voice Recording mode.");
         cleanup();
+        // Fallback to voice recording mode
+        startVoiceRecording();
       };
       
       ws.onclose = () => {
-        if (callState === 'connected' || callState === 'connecting') {
+        if (callState === 'connected') {
            setCallState('idle');
            setTranscript('تم إنهاء المكالمة.');
         }
@@ -296,15 +390,21 @@ export default function InteractiveTeacher() {
 
     } catch (e) {
       console.error("Call setup failed", e);
-      alert("الرجاء السماح بالوصول للميكروفون للاتصال بالمعلم");
-      setCallState('idle');
-      cleanup();
+      // Fallback
+      startVoiceRecording();
     }
   };
 
   const endCall = () => {
+    if (voiceRecorderRef.current && voiceRecorderRef.current.state === 'recording') {
+      stopVoiceRecording();
+      return;
+    }
+    if (teacherAudioRef.current) {
+      teacherAudioRef.current.pause();
+    }
     setCallState('idle');
-    setTranscript('تم إنهاء المكالمة.');
+    setTranscript('مستعد لجلسة تسميع جديدة.');
     cleanup();
   };
 
@@ -457,7 +557,21 @@ export default function InteractiveTeacher() {
                     
                     <div className="min-h-[2.5rem]">
                       <p className="text-teal-800 font-bold">المعلم معك الآن</p>
-                      <p className="text-teal-600 text-xs mt-1">{transcript}</p>
+                      <p className="text-teal-700 text-sm mt-2 leading-relaxed bg-teal-100/50 p-3 rounded-xl border border-teal-200/50">{transcript}</p>
+                      {teacherAudioUrl && (
+                        <button
+                          onClick={() => {
+                            if (teacherAudioRef.current) {
+                              teacherAudioRef.current.currentTime = 0;
+                              teacherAudioRef.current.play().catch(console.error);
+                            }
+                          }}
+                          className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold hover:bg-teal-500 transition-colors shadow-sm"
+                        >
+                          <Waves className="w-3.5 h-3.5" />
+                          إعادة سماع التوجيه الصوتي
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -481,7 +595,7 @@ export default function InteractiveTeacher() {
                     className="w-full group relative flex items-center justify-center gap-3 py-4 bg-teal-500 rounded-xl shadow-[0_4px_0_#0D9488] active:shadow-[0_0px_0_#0D9488] active:translate-y-[4px] transition-all hover:bg-teal-400"
                   >
                     <PhoneCall className="w-6 h-6 text-white" />
-                    <span className="font-bold text-white text-lg">ابدأ التسميع</span>
+                    <span className="font-bold text-white text-lg">ابدأ التسميع مع المعلم</span>
                   </button>
                 ) : (
                   <button
@@ -489,7 +603,9 @@ export default function InteractiveTeacher() {
                     className="w-full group relative flex items-center justify-center gap-3 py-4 bg-red-500 rounded-xl shadow-[0_4px_0_#C53030] active:shadow-[0_0px_0_#C53030] active:translate-y-[4px] transition-all hover:bg-red-400"
                   >
                     <PhoneOff className="w-6 h-6 text-white" />
-                    <span className="font-bold text-white text-lg">إنهاء التسميع</span>
+                    <span className="font-bold text-white text-lg">
+                      {voiceRecorderRef.current?.state === 'recording' ? 'إرسال التسميع للمعلم' : 'إنهاء التسميع'}
+                    </span>
                   </button>
                 )}
               </div>

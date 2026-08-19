@@ -222,39 +222,42 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
     const responseText = analyzeResponse.text;
     if (!responseText) throw new Error('No text response from Gemini');
 
-    const ttsResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-tts',
-      contents: [{ parts: [{ text: responseText }] }],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-      },
-    });
+    let base64Wav: string | null = null;
+    try {
+      const ttsResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-preview-tts',
+        contents: [{ parts: [{ text: responseText }] }],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
+        },
+      });
 
-    const base64AudioData = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    let base64Wav = null;
-
-    if (base64AudioData) {
-      const pcmBuffer = Buffer.from(base64AudioData, 'base64');
-      const sampleRate = 24000;
-      const channels = 1;
-      const bitsPerSample = 16;
-      const dataLength = pcmBuffer.length;
-      const header = Buffer.alloc(44);
-      header.write('RIFF', 0);
-      header.writeUInt32LE(36 + dataLength, 4);
-      header.write('WAVE', 8);
-      header.write('fmt ', 12);
-      header.writeUInt32LE(16, 16);
-      header.writeUInt16LE(1, 20);
-      header.writeUInt16LE(channels, 22);
-      header.writeUInt32LE(sampleRate, 24);
-      header.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28);
-      header.writeUInt16LE(channels * (bitsPerSample / 8), 32);
-      header.writeUInt16LE(bitsPerSample, 34);
-      header.write('data', 36);
-      header.writeUInt32LE(dataLength, 40);
-      base64Wav = Buffer.concat([header, pcmBuffer]).toString('base64');
+      const base64AudioData = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64AudioData) {
+        const pcmBuffer = Buffer.from(base64AudioData, 'base64');
+        const sampleRate = 24000;
+        const channels = 1;
+        const bitsPerSample = 16;
+        const dataLength = pcmBuffer.length;
+        const header = Buffer.alloc(44);
+        header.write('RIFF', 0);
+        header.writeUInt32LE(36 + dataLength, 4);
+        header.write('WAVE', 8);
+        header.write('fmt ', 12);
+        header.writeUInt32LE(16, 16);
+        header.writeUInt16LE(1, 20);
+        header.writeUInt16LE(channels, 22);
+        header.writeUInt32LE(sampleRate, 24);
+        header.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28);
+        header.writeUInt16LE(channels * (bitsPerSample / 8), 32);
+        header.writeUInt16LE(bitsPerSample, 34);
+        header.write('data', 36);
+        header.writeUInt32LE(dataLength, 40);
+        base64Wav = Buffer.concat([header, pcmBuffer]).toString('base64');
+      }
+    } catch (ttsErr) {
+      console.warn('[TTS] Gemini audio generation skipped:', ttsErr);
     }
 
     res.json({ text: responseText, audio: base64Wav });
