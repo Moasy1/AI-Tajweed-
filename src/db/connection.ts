@@ -17,6 +17,7 @@ export async function connectToDatabase(): Promise<void> {
   try {
     await mongoose.connect(uri, {
       dbName: 'quran_ai_assistant',
+      serverSelectionTimeoutMS: 3000, // Fail fast instead of waiting 30s
     });
     isConnected = true;
     console.log('[MongoDB] Connected successfully.');
