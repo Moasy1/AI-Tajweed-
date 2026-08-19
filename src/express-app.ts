@@ -119,7 +119,7 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
       : (req.file.mimetype || 'audio/webm');
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: {
         parts: [
           { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
@@ -206,7 +206,7 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
       : (req.file.mimetype || 'audio/webm');
 
     const analyzeResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: {
         parts: [
           { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
