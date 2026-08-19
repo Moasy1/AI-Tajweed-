@@ -1,0 +1,10 @@
+{
+  "name": "Quran AI Assistant",
+  "description": "منصة متقدمة لتحفيظ القرآن الكريم وتصحيح التجويد باستخدام الذكاء الاصطناعي",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
