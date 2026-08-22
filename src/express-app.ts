@@ -349,6 +349,104 @@ app.post('/api/ijazah', async (req, res) => {
 });
 
 // ────────────────────────────────────────────────
+// 6. Global Context-Aware AI Assistant Chat
+// ────────────────────────────────────────────────
+app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
+  try {
+    const { message, context, history, withAudio } = req.body;
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    const { GoogleGenAI } = await import('@google/genai');
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.json({
+        text: 'أهلاً بك! أنا المعلم القرآني الذكي. يرجى ضبط مفتاح الذكاء الاصطناعي للاستفادة الكاملة من ميزات التوجيه والتفسير المتقدم.',
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
+
+    const pageContext = context?.pathname || 'الرئيسية';
+    const pageTitle = context?.pageTitle || '';
+
+    const systemInstruction = `أنت 'المعلم القرآني الذكي' في منصة 'ترتيل AI'.
+دورك: مرشد ومعلم قرآني ومربٍ إيماني رفيق وعالم بأحكام التجويد ومخارج الحروف وعلوم القرآن والتفسير المعتمد بمصحف المدينة النبوية (التفسير الميسر).
+السياق الحالي للطالب في المنصة:
+- الصفحة الحالية: ${pageContext} (${pageTitle})
+
+إرشادات هامة في ردودك:
+1. إذا سأل عن تفسير أو آية، استند لتفسير مصحف المدينة النبوية وقدم معنى واضحاً وفوائد إيمانية.
+2. إذا سأل عن حكم تجويدي، اشرحه ببساطة مع ذكر أمثلة ونطق سليم.
+3. إذا سأل عن الحفظ أو المراجعة، قدم خطوات عملية محفزة لتثبيت الحفظ.
+4. إذا كان في صفحة الأطفال، اجعل الأسلوب مرحاً ومشجعاً مع كلمات لطيفة.
+5. اجعل ردك موجزاً، مرتباً بالنقاط، مكتوباً بعربية فصحى جميلة وبنبرة محفزة تلامس القلب.`;
+
+    let conversationText = `${systemInstruction}\n\n`;
+    if (Array.isArray(history) && history.length > 0) {
+      conversationText += `سجل المحادثة السابقة:\n` + history.slice(-6).map((h: any) => `${h.role === 'user' ? 'الطالب' : 'المعلم'}: ${h.text}`).join('\n') + `\n\n`;
+    }
+    conversationText += `سؤال الطالب الآن: ${message}`;
+
+    const analyzeResponse = await ai.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: [{ parts: [{ text: conversationText }] }],
+    });
+
+    const responseText = analyzeResponse.text || 'أهلاً بك، كيف يمكنني مساعدتك في رحلتك القرآنية اليوم؟';
+
+    let base64Wav: string | null = null;
+    if (withAudio) {
+      try {
+        const ttsResponse = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-preview-tts',
+          contents: [{ parts: [{ text: responseText.slice(0, 300) }] }],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
+          },
+        });
+
+        const base64AudioData = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64AudioData) {
+          const pcmBuffer = Buffer.from(base64AudioData, 'base64');
+          const sampleRate = 24000;
+          const channels = 1;
+          const bitsPerSample = 16;
+          const dataLength = pcmBuffer.length;
+          const header = Buffer.alloc(44);
+          header.write('RIFF', 0);
+          header.writeUInt32LE(36 + dataLength, 4);
+          header.write('WAVE', 8);
+          header.write('fmt ', 12);
+          header.writeUInt32LE(16, 16);
+          header.writeUInt16LE(1, 20);
+          header.writeUInt16LE(channels, 22);
+          header.writeUInt32LE(sampleRate, 24);
+          header.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28);
+          header.writeUInt16LE(channels * (bitsPerSample / 8), 32);
+          header.writeUInt16LE(bitsPerSample, 34);
+          header.write('data', 36);
+          header.writeUInt32LE(dataLength, 40);
+          base64Wav = Buffer.concat([header, pcmBuffer]).toString('base64');
+        }
+      } catch (ttsErr) {
+        console.warn('[Assistant TTS] Skipped TTS generation:', ttsErr);
+      }
+    }
+
+    res.json({ text: responseText, audio: base64Wav });
+  } catch (error: any) {
+    console.error('Assistant chat error:', error);
+    res.status(500).json({ error: 'Failed to process assistant chat', details: String(error) });
+  }
+});
+
+// ────────────────────────────────────────────────
 // Global error handler
 // ────────────────────────────────────────────────
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

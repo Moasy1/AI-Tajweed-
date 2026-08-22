@@ -6,6 +6,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
+import GlobalAIAssistant from './components/GlobalAIAssistant';
 import Dashboard from './pages/Dashboard';
 import Tajweed from './pages/Tajweed';
 import Ijazah from './pages/Ijazah';
@@ -16,7 +17,7 @@ import MushafTafsir from './pages/MushafTafsir';
 export default function App() {
   return (
     <Router>
-      <div className="flex h-screen bg-slate-50 font-sans overflow-hidden" dir="rtl">
+      <div className="flex h-screen bg-slate-50 font-sans overflow-hidden relative" dir="rtl">
         <Sidebar />
         <main className="flex-1 overflow-y-auto pb-20 md:pb-0 h-full relative">
           <Routes>
@@ -30,6 +31,8 @@ export default function App() {
           </Routes>
         </main>
         <MobileNav />
+        {/* Omnipresent Global Context-Aware AI Assistant */}
+        <GlobalAIAssistant />
       </div>
     </Router>
   );
