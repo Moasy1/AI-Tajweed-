@@ -24,7 +24,12 @@ const upload = multer({
   },
 });
 
-app.use(express.json());
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+    return next();
+  }
+  express.json()(req, res, next);
+});
 app.use('/api/mushaf', mushafRouter);
 
 const aiLimiter = rateLimit({

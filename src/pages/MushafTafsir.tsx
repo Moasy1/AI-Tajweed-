@@ -24,6 +24,9 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   Mic,
+  Lightbulb,
+  Heart,
+  Compass,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -86,6 +89,7 @@ export default function MushafTafsir() {
   const [activeTadabburVerse, setActiveTadabburVerse] = useState<Verse | null>(null);
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiLoadingStep, setAiLoadingStep] = useState(0);
   const [userQuestion, setUserQuestion] = useState('');
   const [aiChatHistory, setAiChatHistory] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([]);
   const [aiChatLoading, setAiChatLoading] = useState(false);
@@ -239,16 +243,24 @@ export default function MushafTafsir() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  // Open AI Tadabbur Modal
+  // Open AI Tadabbur Modal with progressive steps and timeout protection
   const openAiTadabbur = async (verse: Verse) => {
     setActiveTadabburVerse(verse);
     setAiExplanation(null);
     setAiLoading(true);
+    setAiLoadingStep(1);
     setAiChatHistory([]);
     setUserQuestion('');
 
+    const stepInterval = setInterval(() => {
+      setAiLoadingStep((s) => (s < 3 ? s + 1 : s));
+    }, 1200);
+
     try {
       const cleanTafsir = verse.tafsir_madinah.replace(/<[^>]*>/g, '');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       const res = await fetch('/api/mushaf/ai-explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -257,19 +269,39 @@ export default function MushafTafsir() {
           text_uthmani: verse.text_uthmani,
           tafsir_madinah: cleanTafsir,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
       const data = await res.json();
       if (data.explanation) {
         setAiExplanation(data.explanation);
       } else {
-        setAiExplanation('تعذر جلب التدبر حالياً.');
+        setAiExplanation(generateFallbackTadabbur(verse));
       }
     } catch (err) {
-      console.error('AI Explain error:', err);
-      setAiExplanation('حدث خطأ أثناء التواصل مع المعلم الذكي.');
+      console.warn('AI Tadabbur fetch delayed/failed, using structured fallback:', err);
+      setAiExplanation(generateFallbackTadabbur(verse));
     } finally {
+      clearInterval(stepInterval);
       setAiLoading(false);
     }
+  };
+
+  // Instant local structured breakdown generator from Madinah Tafsir
+  const generateFallbackTadabbur = (verse: Verse) => {
+    const cleanTafsir = verse.tafsir_madinah.replace(/<[^>]*>/g, '');
+    return `### أولاً: المعنى العام والبيان القرآني
+${cleanTafsir}
+
+### ثانياً: الفوائد الإيمانية والتربوية (التدبر)
+- **استشعار عظمة كلام الله**: الإقبال على قراءة الآية بتدبر وخشوع واستحضار معانيها الجليلة.
+- **إخلاص النية لله تعالى**: توجيه القلوب بالافتقار إلى الله في كل شأن والاستعانة به سبحانه.
+- **العمل بكتاب الله**: تحويل معاني الآية إلى منهاج حياة وسلوك يومي يرضي الله ورسوله.
+
+### ثالثاً: كيف أعمل بهذه الآية؟ (التطبيق العملي)
+- داوم على استحضار معاني هذه الآية أثناء تلاوتها في صلاتك اليومية.
+- انشر هدايات هذه الآية ومقاصدها لمن حولك من أهلك وإخوانك.`;
   };
 
   // Ask additional question to AI in Tadabbur modal
@@ -297,13 +329,13 @@ export default function MushafTafsir() {
       const data = await res.json();
       setAiChatHistory((prev) => [
         ...prev,
-        { sender: 'ai', text: data.explanation || 'لم نتمكن من الإجابة على السؤال.' },
+        { sender: 'ai', text: data.explanation || 'لم نتمكن من الإجابة على السؤال حالياً.' },
       ]);
     } catch (err) {
       console.error('AI question error:', err);
       setAiChatHistory((prev) => [
         ...prev,
-        { sender: 'ai', text: 'حدث خطأ أثناء معالجة السؤال.' },
+        { sender: 'ai', text: 'حدث خطأ في الاتصال، يرجى إعادة المحاولة.' },
       ]);
     } finally {
       setAiChatLoading(false);
@@ -343,6 +375,54 @@ export default function MushafTafsir() {
         setTimeout(() => el.classList.remove('ring-2', 'ring-emerald-500'), 3000);
       }
     }, 500);
+  };
+
+  // Helper to render formatted markdown sections
+  const renderFormattedMarkdown = (text: string) => {
+    const lines = text.split('\n');
+    return (
+      <div className="space-y-4 text-slate-200 leading-relaxed text-sm md:text-base">
+        {lines.map((line, idx) => {
+          const trimmed = line.trim();
+          if (!trimmed) return null;
+
+          if (trimmed.startsWith('###') || trimmed.startsWith('##')) {
+            const title = trimmed.replace(/^#+\s*/, '');
+            return (
+              <div key={idx} className="flex items-center gap-2 pt-3 pb-1 border-b border-slate-800/80 text-emerald-400 font-bold text-base">
+                <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{title}</span>
+              </div>
+            );
+          }
+
+          if (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.startsWith('*')) {
+            const content = trimmed.replace(/^[-•*]\s*/, '');
+            return (
+              <div key={idx} className="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/50">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 mt-2 shrink-0" />
+                <div
+                  className="flex-1 text-slate-200 [&_strong]:text-emerald-300 [&_b]:text-emerald-300"
+                  dangerouslySetInnerHTML={{
+                    __html: content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'),
+                  }}
+                />
+              </div>
+            );
+          }
+
+          return (
+            <p
+              key={idx}
+              className="text-slate-300 [&_strong]:text-emerald-300 [&_b]:text-emerald-300"
+              dangerouslySetInnerHTML={{
+                __html: trimmed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'),
+              }}
+            />
+          );
+        })}
+      </div>
+    );
   };
 
   const filteredChapters = chapters.filter((c) =>
@@ -845,7 +925,7 @@ export default function MushafTafsir() {
 
       {/* AI Tadabbur & Insights Modal */}
       {activeTadabburVerse && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
             
             {/* Modal Header */}
@@ -875,35 +955,67 @@ export default function MushafTafsir() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6 mushaf-scroll">
               {/* Verse Text Quote */}
               <div className="bg-slate-950/80 p-5 rounded-2xl border border-emerald-500/20 text-center">
-                <p className="font-quran text-xl text-emerald-300 leading-loose">
+                <p className="font-quran text-xl md:text-2xl text-emerald-300 leading-loose">
                   ﴿ {activeTadabburVerse.text_uthmani} ﴾
                 </p>
               </div>
 
               {/* Madinah Tafsir Snapshot */}
               <div className="bg-slate-850/60 p-4 rounded-xl border border-slate-800 text-xs">
-                <div className="text-emerald-400 font-bold mb-1">نص التفسير الميسر:</div>
+                <div className="text-emerald-400 font-bold mb-1 flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>نص التفسير الميسر لمصحف المدينة:</span>
+                </div>
                 <div
                   className="text-slate-300 leading-relaxed [&_.green]:text-emerald-400"
                   dangerouslySetInnerHTML={{ __html: activeTadabburVerse.tafsir_madinah }}
                 />
               </div>
 
-              {/* AI Generated In-depth Reflection */}
+              {/* AI Generated In-depth Reflection or Dynamic Loading */}
               <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-teal-400">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>البيان القرآني والفوائد الإيمانية المستنبطة:</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-teal-400">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>البيان القرآني والفوائد الإيمانية المستنبطة:</span>
+                  </div>
+                  {!aiLoading && (
+                    <button
+                      onClick={() => openAiTadabbur(activeTadabburVerse)}
+                      className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>إعادة التوليد</span>
+                    </button>
+                  )}
                 </div>
 
                 {aiLoading ? (
-                  <div className="p-8 flex flex-col items-center justify-center space-y-3 text-slate-400 text-xs">
-                    <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-                    <p>المعلم الذكي يستنبط الفوائد والتدبر من تفسير مصحف المدينة...</p>
+                  <div className="p-8 rounded-2xl bg-slate-950/60 border border-slate-800/80 flex flex-col items-center justify-center space-y-4 text-center">
+                    <div className="relative w-12 h-12">
+                      <div className="absolute inset-0 border-3 border-emerald-500/20 rounded-full" />
+                      <div className="absolute inset-0 border-3 border-emerald-500 rounded-full border-t-transparent animate-spin" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Sparkles className="w-5 h-5 text-emerald-400 animate-pulse" />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-white">
+                        {aiLoadingStep === 1
+                          ? 'استحضار تفسير مصحف المدينة النبوية...'
+                          : aiLoadingStep === 2
+                          ? 'استنباط الفوائد الإيمانية والتربوية...'
+                          : 'صياغة التوجيهات والتطبيقات العملية...'}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        يقوم المعلم الذكي بتحليل الآية المباركة
+                      </p>
+                    </div>
                   </div>
                 ) : (
-                  <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800/80 text-sm leading-relaxed text-slate-200 whitespace-pre-line space-y-2">
-                    {aiExplanation}
+                  <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800/80">
+                    {aiExplanation && renderFormattedMarkdown(aiExplanation)}
                   </div>
                 )}
               </div>
@@ -911,18 +1023,21 @@ export default function MushafTafsir() {
               {/* Interactive Chat Q&A regarding the verse */}
               {aiChatHistory.length > 0 && (
                 <div className="space-y-3 pt-4 border-t border-slate-800">
-                  <div className="text-xs font-bold text-slate-400">الأسئلة والأجوبة حول الآية:</div>
+                  <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>الأسئلة والأجوبة حول الآية:</span>
+                  </div>
                   <div className="space-y-3">
                     {aiChatHistory.map((item, idx) => (
                       <div
                         key={idx}
                         className={`p-3.5 rounded-2xl text-xs leading-relaxed ${
                           item.sender === 'user'
-                            ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 mr-8'
-                            : 'bg-slate-950 text-slate-200 border border-slate-800 ml-8'
+                            ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 mr-6'
+                            : 'bg-slate-950 text-slate-200 border border-slate-800 ml-6'
                         }`}
                       >
-                        <div className="font-bold mb-1 opacity-70">
+                        <div className="font-bold mb-1 opacity-75">
                           {item.sender === 'user' ? 'سؤالك:' : 'إجابة المعلم الذكي:'}
                         </div>
                         <div className="whitespace-pre-line">{item.text}</div>

@@ -273,9 +273,29 @@ mushafRouter.post('/ai-explain', aiLimiter, async (req: Request, res: Response) 
       return res.status(400).json({ error: 'verse_key و text_uthmani مطلوبان' });
     }
 
+    // Check cache for standard explanations (without custom user question)
+    const cacheKey = question ? null : `tadabbur_${verse_key}`;
+    if (cacheKey) {
+      const cached = getCached<string>(cacheKey);
+      if (cached) return res.json({ verse_key, explanation: cached, cached: true });
+    }
+
     const { GoogleGenAI } = await import('@google/genai');
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      // Fallback if no API key
+      const fallback = `### أولاً: المعنى العام والبيان القرآني
+${tafsir_madinah || 'تأمل في هذه الآية المباركة واستحضر عظمة الله تعالى.'}
+
+### ثانياً: الفوائد والدروس المستفادة
+- استحضار مراقبة الله تعالى وإخلاص العمل له.
+- تدبر كتاب الله واتباع هداه في القول والعمل.
+- التطبيق العملي لمعاني الآية في واقع الحياة اليومية.`;
+      return res.json({ verse_key, explanation: fallback, fallback: true });
+    }
+
     const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKey,
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
@@ -287,14 +307,19 @@ mushafRouter.post('/ai-explain', aiLimiter, async (req: Request, res: Response) 
 ${question ? `- سؤال المستخدم الإضافي: "${question}"` : ''}
 
 المطلوب:
-قدم شرحاً وتدبراً إيمانياً وتطبيقياً وافياً باللغة العربية الفصحى الجميلة يشتمل على النقاط التالية بصيغة منسقة ومرتبة:
-1. **المعنى العام والبيان القرآني**: تبسيط المعنى بأسلوب إيماني رصين يستند لتفسير مصحف المدينة.
-2. **معاني الكلمات وغريب الآية**: توضيح الألفاظ الدقيقة إن وجدت.
-3. **الفوائد الإيمانية والتربوية (التدبر)**: استخراج 3 إلى 4 فوائد إيمانية وتربوية عميقة مستنبطة من الآية.
-4. **كيف أعمل بهذه الآية؟ (التطبيق العملي)**: خطوات ووصايا عملية يطبقها القارئ في حياته اليومية.
-${question ? `5. **الإجابة عن سؤال المستخدم**: إجابة واضحة وموثقة على سؤال المستخدم.` : ''}
+قدم شرحاً وتدبراً إيمانياً وتطبيقياً وافياً ومختصراً بأسلوب إيماني رصين وجميل:
+### أولاً: المعنى العام والبيان القرآني
+(تبسيط المعنى في فقرة مركزة مستندة لتفسير مصحف المدينة)
 
-اجعل الأسلوب محفزاً يلامس القلب، مع الالتزام التام بالمنهج الصحيح والاعتماد على تفسير مصحف المدينة النبوية.`;
+### ثانياً: الفوائد الإيمانية والتربوية (التدبر)
+- (فائدة إيمانية 1)
+- (فائدة إيمانية 2)
+- (فائدة إيمانية 3)
+
+### ثالثاً: كيف أعمل بهذه الآية؟ (التطبيق العملي)
+- (وصية وخطوة عملية 1)
+- (وصية وخطوة عملية 2)
+${question ? `\n### رابعاً: الإجابة على سؤالك\n(إجابة واضحة وموثقة)` : ''}`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
@@ -302,9 +327,21 @@ ${question ? `5. **الإجابة عن سؤال المستخدم**: إجابة �
     });
 
     const explanation = response.text || 'عذراً، لم نتمكن من استخراج التدبر حالياً.';
+    if (cacheKey) {
+      setCached(cacheKey, explanation, 86400000); // 24 hours
+    }
+
     res.json({ verse_key, explanation });
   } catch (error: any) {
     console.error('AI Explain error:', error);
-    res.status(500).json({ error: 'فشل في استخراج التدبر بالذكاء الاصطناعي', details: String(error) });
+    // Provide a graceful fallback on any AI error
+    const { verse_key, tafsir_madinah } = req.body;
+    const fallback = `### المعنى العام والبيان القرآني
+${tafsir_madinah || 'تأمل في هذه الآية المباركة.'}
+
+### الفوائد والدروس المستنبطة
+- استشعار عظمة الله والافتقار إليه في كل شأن.
+- العمل بمقتضى كلام الله تعالى وتدبر معانيه.`;
+    res.json({ verse_key: verse_key || '1:1', explanation: fallback, fallback: true });
   }
 });
