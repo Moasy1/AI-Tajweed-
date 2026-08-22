@@ -188,55 +188,75 @@ export default function GlobalAIAssistant() {
     }
   };
 
-  // Play audio response with native instant SpeechSynthesis
-  const speakText = (text: string) => {
-    if (!voiceEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      // Clean markdown tags for natural speech
-      const clean = text
-        .replace(/<[^>]*>/g, '')
-        .replace(/[*#_~`]/g, '')
-        .replace(/﴿[^﴾]*﴾/g, '')
-        .slice(0, 250);
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [audioLoadingId, setAudioLoadingId] = useState<string | null>(null);
 
-      const utterance = new SpeechSynthesisUtterance(clean);
-      utterance.lang = 'ar-SA';
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn('Speech synthesis error:', e);
-    }
-  };
-
-  // Play audio response (TTS or Web Speech)
-  const playAudio = (base64Audio?: string | null, rawText?: string) => {
+  // Fetch and play High-Fidelity Natural Human Voice from Gemini
+  const fetchAndPlayNaturalVoice = async (msgId: string, text: string) => {
     if (!voiceEnabled) return;
-    if (base64Audio) {
-      try {
-        const audio = new Audio(`data:audio/wav;base64,${base64Audio}`);
-        audioPlayerRef.current = audio;
-        audio.play().catch(() => {
-          if (rawText) speakText(rawText);
-        });
-        return;
-      } catch (e) {
-        console.warn('TTS play error:', e);
+    try {
+      setAudioLoadingId(msgId);
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
       }
-    }
-    if (rawText) {
-      speakText(rawText);
+
+      const res = await fetch('/api/assistant/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          voice: 'Charon', // Natural scholarly human teacher voice
+        }),
+      });
+
+      if (!res.ok) throw new Error('TTS failed');
+      const data = await res.json();
+      if (data.audio) {
+        // Cache audio onto the message
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msgId ? { ...m, audio: data.audio } : m))
+        );
+        const audio = new Audio(`data:audio/wav;base64,${data.audio}`);
+        audioPlayerRef.current = audio;
+        setPlayingAudioId(msgId);
+        audio.play().catch((e) => console.warn('Audio play error:', e));
+        audio.onended = () => setPlayingAudioId(null);
+      }
+    } catch (err) {
+      console.warn('Natural voice playback error:', err);
+    } finally {
+      setAudioLoadingId(null);
     }
   };
 
-  // Send message to assistant (Ultra-Fast)
+  // Play existing or new natural audio
+  const handlePlayVoice = (msg: ChatMessage) => {
+    if (playingAudioId === msg.id) {
+      if (audioPlayerRef.current) audioPlayerRef.current.pause();
+      setPlayingAudioId(null);
+      return;
+    }
+
+    if (msg.audio) {
+      if (audioPlayerRef.current) audioPlayerRef.current.pause();
+      const audio = new Audio(`data:audio/wav;base64,${msg.audio}`);
+      audioPlayerRef.current = audio;
+      setPlayingAudioId(msg.id);
+      audio.play().catch((e) => console.warn('Audio play error:', e));
+      audio.onended = () => setPlayingAudioId(null);
+    } else {
+      fetchAndPlayNaturalVoice(msg.id, msg.text);
+    }
+  };
+
+  // Send message to assistant (Instant Text Delivery + Parallel Natural Voice)
   const sendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputMessage).trim();
     if (!text || isLoading) return;
 
+    const userMsgId = Date.now().toString();
     const userMsg: ChatMessage = {
-      id: Date.now().toString(),
+      id: userMsgId,
       role: 'user',
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -253,7 +273,7 @@ export default function GlobalAIAssistant() {
       }));
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const res = await fetch('/api/assistant/chat', {
         method: 'POST',
@@ -272,21 +292,25 @@ export default function GlobalAIAssistant() {
 
       const data = await res.json();
       const responseText = data.text || 'أنا معك، كيف يمكنني مساعدتك في رحلتك القرآنية؟';
+      const assistantMsgId = (Date.now() + 1).toString();
+      
       const assistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: assistantMsgId,
         role: 'assistant',
         text: responseText,
-        audio: data.audio || null,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
+      setIsLoading(false);
+
+      // Trigger natural high-fidelity voice in parallel if enabled
       if (voiceEnabled) {
-        playAudio(data.audio, responseText);
+        fetchAndPlayNaturalVoice(assistantMsgId, responseText);
       }
     } catch (err) {
       console.warn('Assistant chat response fallback:', err);
-      const fallbackText = 'أهلاً بك! يرجى التأكد من اتصال الإنترنت وطرح سؤالك مرة أخرى وسأجيبك فوراً.';
+      const fallbackText = 'أهلاً بك! أنا جاهز للإجابة عن أسئلتك في التفسير والتجويد والحفظ.';
       setMessages((prev) => [
         ...prev,
         {
@@ -296,7 +320,6 @@ export default function GlobalAIAssistant() {
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -506,18 +529,34 @@ export default function GlobalAIAssistant() {
                         {/* Actions for assistant messages */}
                         {isAssistant && (
                           <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
-                            <span className="opacity-70">ترتيل AI</span>
+                            <span className="opacity-70 font-sans">صوت الشيخ المعلم (طبيعي)</span>
                             <div className="flex items-center gap-2">
-                              {msg.audio && (
-                                <button
-                                  onClick={() => playAudio(msg.audio!)}
-                                  className="text-slate-400 hover:text-emerald-400 flex items-center gap-1"
-                                  title="استماع للرد"
-                                >
-                                  <Volume2 className="w-3 h-3" />
-                                  <span>استماع</span>
-                                </button>
-                              )}
+                              <button
+                                onClick={() => handlePlayVoice(msg)}
+                                className={`flex items-center gap-1 transition-colors ${
+                                  playingAudioId === msg.id
+                                    ? 'text-emerald-400 font-bold'
+                                    : 'text-slate-400 hover:text-emerald-400'
+                                }`}
+                                title="استماع بصوت المعلم الطبيعي"
+                              >
+                                {audioLoadingId === msg.id ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
+                                    <span className="text-[10px]">تحضير الصوت...</span>
+                                  </>
+                                ) : playingAudioId === msg.id ? (
+                                  <>
+                                    <VolumeX className="w-3 h-3 text-rose-400" />
+                                    <span className="text-emerald-400">إيقاف</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Volume2 className="w-3 h-3" />
+                                    <span>استماع</span>
+                                  </>
+                                )}
+                              </button>
                               <button
                                 onClick={() => handleCopy(msg.id, msg.text)}
                                 className="text-slate-400 hover:text-emerald-400 flex items-center gap-1"

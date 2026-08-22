@@ -412,10 +412,91 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
     // Store in cache for 1 hour
     assistantCache.set(cacheKey, { text: responseText, expiry: Date.now() + 3600000 });
 
-    res.json({ text: responseText });
+// In-memory cache for audio voice snippets
+const ttsCache = new Map<string, { audio: string; expiry: number }>();
+
+// ────────────────────────────────────────────────
+// 7. High-Fidelity Natural Human Teacher Voice (TTS)
+// ────────────────────────────────────────────────
+app.post('/api/assistant/tts', aiLimiter, async (req, res) => {
+  try {
+    const { text, voice } = req.body;
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'text is required' });
+    }
+
+    // Clean text for speech
+    const cleanSpeechText = text
+      .replace(/<[^>]*>/g, '')
+      .replace(/[*#_~`]/g, '')
+      .replace(/﴿[^﴾]*﴾/g, '')
+      .trim()
+      .slice(0, 350); // Concise snippet for ultra-fast generation
+
+    if (!cleanSpeechText) {
+      return res.status(400).json({ error: 'No text to speak' });
+    }
+
+    const selectedVoice = voice || 'Charon'; // Charon is a warm, distinguished, scholarly human voice
+    const cacheKey = `${selectedVoice}_${cleanSpeechText}`;
+    const cached = ttsCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiry) {
+      return res.json({ audio: cached.audio, cached: true });
+    }
+
+    const { GoogleGenAI } = await import('@google/genai');
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ error: 'No API key configured' });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
+
+    const ttsResponse = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-tts',
+      contents: [{ parts: [{ text: cleanSpeechText }] }],
+      config: {
+        responseModalities: ['AUDIO'],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } } },
+      },
+    });
+
+    const base64AudioData = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64AudioData) {
+      throw new Error('No audio returned from Gemini TTS');
+    }
+
+    const pcmBuffer = Buffer.from(base64AudioData, 'base64');
+    const sampleRate = 24000;
+    const channels = 1;
+    const bitsPerSample = 16;
+    const dataLength = pcmBuffer.length;
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataLength, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(channels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28);
+    header.writeUInt16LE(channels * (bitsPerSample / 8), 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(dataLength, 40);
+    const base64Wav = Buffer.concat([header, pcmBuffer]).toString('base64');
+
+    // Cache the natural audio
+    ttsCache.set(cacheKey, { audio: base64Wav, expiry: Date.now() + 86400000 });
+
+    res.json({ audio: base64Wav });
   } catch (error: any) {
-    console.error('Assistant chat error:', error);
-    res.status(500).json({ error: 'Failed to process assistant chat', details: String(error) });
+    console.error('Assistant TTS error:', error);
+    res.status(500).json({ error: 'Failed to synthesize speech', details: String(error) });
   }
 });
 
