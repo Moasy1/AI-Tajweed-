@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
 import Dashboard from './pages/Dashboard';
@@ -11,6 +11,7 @@ import Tajweed from './pages/Tajweed';
 import Ijazah from './pages/Ijazah';
 import KidsMode from './pages/KidsMode';
 import InteractiveTeacher from './pages/InteractiveTeacher';
+import MushafTafsir from './pages/MushafTafsir';
 
 export default function App() {
   return (
@@ -20,6 +21,8 @@ export default function App() {
         <main className="flex-1 overflow-y-auto pb-20 md:pb-0 h-full relative">
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/mushaf" element={<MushafTafsir />} />
+            <Route path="/tafsir" element={<Navigate to="/mushaf" replace />} />
             <Route path="/tajweed" element={<Tajweed />} />
             <Route path="/ijazah" element={<Ijazah />} />
             <Route path="/kids" element={<KidsMode />} />

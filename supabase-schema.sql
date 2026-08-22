@@ -47,6 +47,20 @@ CREATE TABLE IF NOT EXISTS users (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 4. Mushaf Bookmarks & Favorites
+CREATE TABLE IF NOT EXISTS mushaf_bookmarks (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  verse_key   TEXT NOT NULL,
+  surah_name  TEXT NOT NULL,
+  ayah_number INTEGER NOT NULL,
+  page_number INTEGER NOT NULL,
+  note        TEXT DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bookmarks_verse ON mushaf_bookmarks (verse_key);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON mushaf_bookmarks (created_at DESC);
+
 -- Optional: seed a default user for testing
 -- INSERT INTO users (name) VALUES ('مستخدم تجريبي');
 
@@ -54,3 +68,4 @@ CREATE TABLE IF NOT EXISTS users (
 SELECT table_name FROM information_schema.tables
 WHERE table_schema = 'public'
 ORDER BY table_name;
+

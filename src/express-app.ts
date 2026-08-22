@@ -7,6 +7,7 @@ import express from 'express';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { getSupabase, isSupabaseConnected } from './db/supabase.js';
+import { mushafRouter } from './mushaf-routes.js';
 
 export const app = express();
 
@@ -24,6 +25,7 @@ const upload = multer({
 });
 
 app.use(express.json());
+app.use('/api/mushaf', mushafRouter);
 
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,

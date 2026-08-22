@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Mic, Award, Smile, BookOpen, Settings } from 'lucide-react';
+import { Home, Mic, Award, Smile, BookOpen, Settings, BookMarked } from 'lucide-react';
 import QuranRadio from './QuranRadio';
 
 export default function Sidebar() {
@@ -7,6 +7,7 @@ export default function Sidebar() {
 
   const links = [
     { name: 'لوحة المتابعة', path: '/', icon: Home },
+    { name: 'مصحف وتفسير المدينة', path: '/mushaf', icon: BookMarked, badge: 'جديد' },
     { name: 'التسميع والتجويد', path: '/tajweed', icon: Mic },
     { name: 'المعلم التفاعلي', path: '/teacher', icon: BookOpen },
     { name: 'طلب الإجازة', path: '/ijazah', icon: Award },
@@ -14,7 +15,7 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="hidden md:flex w-72 h-screen bg-slate-900 text-slate-300 flex-col font-sans border-l border-slate-800 shrink-0" dir="rtl">
+    <div className="hidden md:flex w-72 h-screen bg-slate-900 text-slate-300 flex-col font-sans border-l border-slate-800 shrink-0 select-none" dir="rtl">
       <div className="p-8 flex items-center gap-4 border-b border-slate-800/50">
         <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20">
           <BookOpen className="w-6 h-6 text-white" />
@@ -34,12 +35,17 @@ export default function Sidebar() {
                 to={link.path}
                 className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 ${
                   isActive 
-                    ? 'bg-emerald-500/10 text-emerald-400 font-bold' 
+                    ? 'bg-emerald-500/10 text-emerald-400 font-bold shadow-sm' 
                     : 'hover:bg-slate-800/50 hover:text-white font-medium'
                 }`}
               >
                 <Icon className={`w-5 h-5 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
                 <span>{link.name}</span>
+                {link.badge && (
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold mr-1">
+                    {link.badge}
+                  </span>
+                )}
                 {isActive && (
                   <div className="mr-auto w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 )}

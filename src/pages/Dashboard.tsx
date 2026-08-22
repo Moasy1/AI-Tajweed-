@@ -124,6 +124,30 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-6 md:space-y-8">
+          {/* New Mushaf & Tafsir Card */}
+          <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl p-6 border border-slate-700/60 shadow-md">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                <Book className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                  جديد
+                </span>
+                <h4 className="font-bold text-sm text-white">تفسير مصحف المدينة</h4>
+              </div>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed mb-4">
+              تصفح القرآن الكريم بالرسم العثماني مع التفسير الميسر المعتمد ومساعد التدبر الذكي.
+            </p>
+            <a
+              href="/mushaf"
+              className="inline-flex items-center justify-center w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+            >
+              فتح مصحف المدينة وتفسيره ←
+            </a>
+          </div>
+
           <div className="bg-white rounded-3xl shadow-sm border border-slate-200/60 p-6 md:p-8">
             <h3 className="text-lg md:text-xl font-bold text-slate-900 mb-6">الملاحظات التجويدية</h3>
             <div className="space-y-4">

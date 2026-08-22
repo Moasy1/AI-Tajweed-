@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { Mic, Square, Play, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Mic, Square, Play, RotateCcw, AlertTriangle, BookOpen } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function Tajweed() {
   const [isRecording, setIsRecording] = useState(false);
@@ -117,7 +118,16 @@ export default function Tajweed() {
             <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
             <div className="p-6 md:p-10 flex flex-col items-center">
               <div className="w-full flex justify-between items-center mb-8 md:mb-12">
-                <h3 className="text-base md:text-lg font-bold text-slate-400">{analysisResult?.surah || 'التحليل غير متوفر'}</h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-base md:text-lg font-bold text-slate-700">{analysisResult?.surah || 'التحليل غير متوفر'}</h3>
+                  <Link
+                    to="/mushaf"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 transition-colors"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>تفسير مصحف المدينة</span>
+                  </Link>
+                </div>
                 <span className="px-3 md:px-4 py-1 md:py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs md:text-sm font-bold">{analysisResult?.ayah || ''}</span>
               </div>
               
