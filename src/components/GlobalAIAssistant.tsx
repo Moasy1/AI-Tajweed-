@@ -188,19 +188,49 @@ export default function GlobalAIAssistant() {
     }
   };
 
-  // Play audio response
-  const playAudio = (base64Audio: string) => {
-    if (!voiceEnabled) return;
+  // Play audio response with native instant SpeechSynthesis
+  const speakText = (text: string) => {
+    if (!voiceEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
-      const audio = new Audio(`data:audio/wav;base64,${base64Audio}`);
-      audioPlayerRef.current = audio;
-      audio.play().catch((e) => console.warn('Audio play error:', e));
+      window.speechSynthesis.cancel();
+      // Clean markdown tags for natural speech
+      const clean = text
+        .replace(/<[^>]*>/g, '')
+        .replace(/[*#_~`]/g, '')
+        .replace(/﴿[^﴾]*﴾/g, '')
+        .slice(0, 250);
+
+      const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.lang = 'ar-SA';
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
     } catch (e) {
-      console.warn('TTS play error:', e);
+      console.warn('Speech synthesis error:', e);
     }
   };
 
-  // Send message to assistant
+  // Play audio response (TTS or Web Speech)
+  const playAudio = (base64Audio?: string | null, rawText?: string) => {
+    if (!voiceEnabled) return;
+    if (base64Audio) {
+      try {
+        const audio = new Audio(`data:audio/wav;base64,${base64Audio}`);
+        audioPlayerRef.current = audio;
+        audio.play().catch(() => {
+          if (rawText) speakText(rawText);
+        });
+        return;
+      } catch (e) {
+        console.warn('TTS play error:', e);
+      }
+    }
+    if (rawText) {
+      speakText(rawText);
+    }
+  };
+
+  // Send message to assistant (Ultra-Fast)
   const sendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputMessage).trim();
     if (!text || isLoading) return;
@@ -217,10 +247,13 @@ export default function GlobalAIAssistant() {
     setIsLoading(true);
 
     try {
-      const historyPayload = messages.slice(-5).map((m) => ({
+      const historyPayload = messages.slice(-4).map((m) => ({
         role: m.role,
         text: m.text,
       }));
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const res = await fetch('/api/assistant/chat', {
         method: 'POST',
@@ -232,31 +265,34 @@ export default function GlobalAIAssistant() {
             pageTitle: pageInfo.title,
           },
           history: historyPayload,
-          withAudio: voiceEnabled,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const data = await res.json();
+      const responseText = data.text || 'أنا معك، كيف يمكنني مساعدتك في رحلتك القرآنية؟';
       const assistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: data.text || 'أنا معك، تفضل بطرح أي سؤال وسأجيبك فوراً.',
+        text: responseText,
         audio: data.audio || null,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-      if (data.audio && voiceEnabled) {
-        playAudio(data.audio);
+      if (voiceEnabled) {
+        playAudio(data.audio, responseText);
       }
     } catch (err) {
-      console.error('Assistant chat error:', err);
+      console.warn('Assistant chat response fallback:', err);
+      const fallbackText = 'أهلاً بك! يرجى التأكد من اتصال الإنترنت وطرح سؤالك مرة أخرى وسأجيبك فوراً.';
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          text: 'عذراً، حدث خطأ أثناء الاتصال بالمعلم الذكي. يرجى المحاولة مرة أخرى.',
+          text: fallbackText,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);

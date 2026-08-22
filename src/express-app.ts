@@ -348,14 +348,28 @@ app.post('/api/ijazah', async (req, res) => {
   }
 });
 
+// In-memory cache for assistant answers
+const assistantCache = new Map<string, { text: string; expiry: number }>();
+
 // ────────────────────────────────────────────────
-// 6. Global Context-Aware AI Assistant Chat
+// 6. Global Context-Aware AI Assistant Chat (Ultra-Fast)
 // ────────────────────────────────────────────────
 app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
   try {
-    const { message, context, history, withAudio } = req.body;
+    const { message, context, history } = req.body;
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'message is required' });
+    }
+
+    const trimmedMsg = message.trim();
+    const pageContext = context?.pathname || 'الرئيسية';
+    const pageTitle = context?.pageTitle || '';
+
+    // Cache check for fast response on repeated questions
+    const cacheKey = `${pageContext}_${trimmedMsg.toLowerCase()}`;
+    const cachedItem = assistantCache.get(cacheKey);
+    if (cachedItem && Date.now() < cachedItem.expiry) {
+      return res.json({ text: cachedItem.text, cached: true });
     }
 
     const { GoogleGenAI } = await import('@google/genai');
@@ -371,75 +385,34 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const pageContext = context?.pathname || 'الرئيسية';
-    const pageTitle = context?.pageTitle || '';
-
     const systemInstruction = `أنت 'المعلم القرآني الذكي' في منصة 'ترتيل AI'.
-دورك: مرشد ومعلم قرآني ومربٍ إيماني رفيق وعالم بأحكام التجويد ومخارج الحروف وعلوم القرآن والتفسير المعتمد بمصحف المدينة النبوية (التفسير الميسر).
-السياق الحالي للطالب في المنصة:
-- الصفحة الحالية: ${pageContext} (${pageTitle})
-
-إرشادات هامة في ردودك:
-1. إذا سأل عن تفسير أو آية، استند لتفسير مصحف المدينة النبوية وقدم معنى واضحاً وفوائد إيمانية.
-2. إذا سأل عن حكم تجويدي، اشرحه ببساطة مع ذكر أمثلة ونطق سليم.
-3. إذا سأل عن الحفظ أو المراجعة، قدم خطوات عملية محفزة لتثبيت الحفظ.
-4. إذا كان في صفحة الأطفال، اجعل الأسلوب مرحاً ومشجعاً مع كلمات لطيفة.
-5. اجعل ردك موجزاً، مرتباً بالنقاط، مكتوباً بعربية فصحى جميلة وبنبرة محفزة تلامس القلب.`;
+السياق الحالي: [${pageContext} - ${pageTitle}].
+تعليمات السرعة والدقة:
+1. قدم إجابة فورية، مركزة وموجزة جداً (بحدود 2-4 فقرات أو نقاط محددة).
+2. استند لتفسير مصحف المدينة النبوية (التفسير الميسر) وأحكام التجويد المعتمدة.
+3. اكتب بأسلوب عربي فصيح رفيق ومحفز.`;
 
     let conversationText = `${systemInstruction}\n\n`;
     if (Array.isArray(history) && history.length > 0) {
-      conversationText += `سجل المحادثة السابقة:\n` + history.slice(-6).map((h: any) => `${h.role === 'user' ? 'الطالب' : 'المعلم'}: ${h.text}`).join('\n') + `\n\n`;
+      conversationText += `سجل الحوار:\n` + history.slice(-4).map((h: any) => `${h.role === 'user' ? 'الطالب' : 'المعلم'}: ${h.text}`).join('\n') + `\n\n`;
     }
-    conversationText += `سؤال الطالب الآن: ${message}`;
+    conversationText += `سؤال الطالب: ${trimmedMsg}`;
 
     const analyzeResponse = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
       contents: [{ parts: [{ text: conversationText }] }],
+      config: {
+        maxOutputTokens: 300,
+        temperature: 0.7,
+      },
     });
 
     const responseText = analyzeResponse.text || 'أهلاً بك، كيف يمكنني مساعدتك في رحلتك القرآنية اليوم؟';
 
-    let base64Wav: string | null = null;
-    if (withAudio) {
-      try {
-        const ttsResponse = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-preview-tts',
-          contents: [{ parts: [{ text: responseText.slice(0, 300) }] }],
-          config: {
-            responseModalities: ['AUDIO'],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-          },
-        });
+    // Store in cache for 1 hour
+    assistantCache.set(cacheKey, { text: responseText, expiry: Date.now() + 3600000 });
 
-        const base64AudioData = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (base64AudioData) {
-          const pcmBuffer = Buffer.from(base64AudioData, 'base64');
-          const sampleRate = 24000;
-          const channels = 1;
-          const bitsPerSample = 16;
-          const dataLength = pcmBuffer.length;
-          const header = Buffer.alloc(44);
-          header.write('RIFF', 0);
-          header.writeUInt32LE(36 + dataLength, 4);
-          header.write('WAVE', 8);
-          header.write('fmt ', 12);
-          header.writeUInt32LE(16, 16);
-          header.writeUInt16LE(1, 20);
-          header.writeUInt16LE(channels, 22);
-          header.writeUInt32LE(sampleRate, 24);
-          header.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28);
-          header.writeUInt16LE(channels * (bitsPerSample / 8), 32);
-          header.writeUInt16LE(bitsPerSample, 34);
-          header.write('data', 36);
-          header.writeUInt32LE(dataLength, 40);
-          base64Wav = Buffer.concat([header, pcmBuffer]).toString('base64');
-        }
-      } catch (ttsErr) {
-        console.warn('[Assistant TTS] Skipped TTS generation:', ttsErr);
-      }
-    }
-
-    res.json({ text: responseText, audio: base64Wav });
+    res.json({ text: responseText });
   } catch (error: any) {
     console.error('Assistant chat error:', error);
     res.status(500).json({ error: 'Failed to process assistant chat', details: String(error) });
