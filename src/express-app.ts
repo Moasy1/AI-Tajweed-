@@ -412,6 +412,13 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
     // Store in cache for 1 hour
     assistantCache.set(cacheKey, { text: responseText, expiry: Date.now() + 3600000 });
 
+    res.json({ text: responseText });
+  } catch (error: any) {
+    console.error('Assistant chat error:', error);
+    res.status(500).json({ error: 'Failed to process assistant chat', details: String(error) });
+  }
+});
+
 // In-memory cache for audio voice snippets
 const ttsCache = new Map<string, { audio: string; expiry: number }>();
 
