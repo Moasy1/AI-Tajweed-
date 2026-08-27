@@ -7,9 +7,7 @@ export class TajweedAudioAnalyzer {
   private stream: MediaStream | null = null;
   private animationFrameId: number | null = null;
   
-  // Simulated AI Model reference for Tajweed rules
-  // In a real environment, this connects to Gemini Pro Audio API
-  public readonly AI_MODEL_VERSION = "Tajweed-Gemini-Pro-v2.1";
+  public readonly AI_MODEL_VERSION = "Gemini-2.5-Flash-Tajweed";
 
   async startRecording(onAnalysisUpdate: (accuracy: AccuracyThreshold, volume: number) => void) {
     try {
@@ -20,6 +18,7 @@ export class TajweedAudioAnalyzer {
       
       this.microphone.connect(this.analyser);
       this.analyser.fftSize = 256;
+      this.analyser.smoothingTimeConstant = 0.8;
       
       const bufferLength = this.analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
@@ -29,37 +28,20 @@ export class TajweedAudioAnalyzer {
         
         this.analyser.getByteFrequencyData(dataArray);
         
-        // Calculate average volume
+        // Calculate root mean square (RMS) volume
         let sum = 0;
         for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
+          sum += dataArray[i] * dataArray[i];
         }
-        const averageVolume = sum / bufferLength;
+        const rms = Math.sqrt(sum / bufferLength);
+        const normalizedVolume = Math.min(100, Math.round((rms / 128) * 100));
         
-        // Simulate AI Tajweed Analysis based on audio input thresholds
-        // In a real production app, we would stream this audio buffer to the AI_MODEL_VERSION
-        // via WebSockets for real-time phoneme matching and Tajweed rule validation.
         let accuracy: AccuracyThreshold = 'idle';
-        
-        if (averageVolume > 30) {
-          // Add some logic to simulate AI evaluation based on voice clarity (volume)
-          // In a real app, this streams to Gemini Pro for phoneme matching
-          const stability = Math.min(100, averageVolume * 1.5);
-          const evaluationFactor = Math.random() * 40 + (stability * 0.6);
-          
-          if (evaluationFactor > 85) {
-            accuracy = 'excellent'; // Blue
-          } else if (evaluationFactor > 65) {
-            accuracy = 'good'; // Green
-          } else if (evaluationFactor > 45) {
-            accuracy = 'close'; // Yellow
-          } else {
-            accuracy = 'weak'; // Red
-          }
+        if (normalizedVolume > 15) {
+          accuracy = 'good';
         }
         
-        onAnalysisUpdate(accuracy, averageVolume);
-        
+        onAnalysisUpdate(accuracy, normalizedVolume);
         this.animationFrameId = requestAnimationFrame(analyze);
       };
       

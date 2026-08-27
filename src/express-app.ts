@@ -125,21 +125,39 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
       ? 'audio/webm'
       : (req.file.mimetype || 'audio/webm');
 
+    const targetSurah = req.body?.surah || '';
+    const targetAyah = req.body?.ayah || '';
+    const referenceText = req.body?.reference_text || '';
+
+    let promptText = `أنت شيخ ومقرئ متقن لقراءات القرآن الكريم وأحكام التجويد (برواية حفص عن عاصم).
+استمع بدقة بالغة إلى التسجيل الصوتي المرفق لتلاوة القارئ.`;
+
+    if (referenceText || targetSurah) {
+      promptText += `\n\nالمرجع المعتمد للآيات المستهدفة:
+- السورة: ${targetSurah || 'غير محدد'}
+- الآية: ${targetAyah || 'غير محدد'}
+- النص القرآني المرجعي المشكول:
+"${referenceText}"\n`;
+    }
+
+    promptText += `
+المطلوب تحليل علمي دقيق للتلاوة ومطابقتها كلمة بكلمة مع النص القرآني الصحيح:
+1. استخرج السورة ورقم الآية إذا لم تكن محددة.
+2. لكل كلمة في الآية:
+   - text: نص الكلمة القرآنية بالتشكيل الصحيح.
+   - status: "correct" (إذا نُطقت الكلمة وأحكامها سليمة) أو "error" (إذا وجد لحن جلي أو خفي أو خلل في حكم تجويدي أو حركة).
+   - rule: الحكم التجويدي المحدد المعني (مثال: "قلقلة صغرى"، "مد متصل 4 حركات"، "إخفاء حقيقي بغنة مرققة"، "إدغام بغنة"، "تفخيم الراء"، "إتمام حركات"، "تلاوة صحيحة").
+   - suggestion: ملاحظة وتوجيه تطبيقي باللغة العربية يوضح كيفية تصحيح النطق أو يثني على الإتقان.
+   - accuracy: تقييم رقمي لدقة نطق الكلمة (من 0 إلى 100).
+3. احسب النسبة المئوية العامة لدقة التلاوة والتجويد (score من 0 إلى 100).
+4. أعد النتيجة بصيغة JSON مطابقة للمخطط المحدد بدقة كاملة.`;
+
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: {
         parts: [
           { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
-          {
-            text: `You are an expert Quran Tajweed teacher. Listen to the provided audio recitation.
-1. Identify the Surah and Ayah if possible.
-2. Analyze the recitation for Tajweed rules.
-3. Provide a word-by-word breakdown.
-4. For each word, indicate if Tajweed is 'correct' or 'error'.
-5. If error, specify the 'rule' and give a 'suggestion' in Arabic.
-6. Provide an overall score out of 100.
-7. Return the response in Arabic.`,
-          },
+          { text: promptText },
         ],
       },
       config: {
@@ -179,9 +197,9 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
     const supabase = getSupabase();
     if (supabase) {
       const { error: dbError } = await supabase.from('recitation_sessions').insert({
-        surah: resultJson.surah,
-        ayah: resultJson.ayah || '',
-        score: Math.round(resultJson.score),
+        surah: resultJson.surah || targetSurah || 'تلاوة قرآنية',
+        ayah: resultJson.ayah || targetAyah || '',
+        score: Math.round(resultJson.score || 0),
         words: resultJson.words,
         mode: 'tajweed',
       });
@@ -212,16 +230,33 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
       ? 'audio/webm'
       : (req.file.mimetype || 'audio/webm');
 
+    const targetSurah = req.body?.surah || '';
+    const targetAyah = req.body?.ayah || '';
+    const referenceText = req.body?.reference_text || '';
+
+    let teacherPrompt = `أنت معلم وقارئ متقن للقرآن الكريم ومشجع للطلاب في حلقة التحفيظ.
+استمع إلى تسجيل التلاوة الصوتية للطالب بعناية.`;
+
+    if (referenceText || targetSurah) {
+      teacherPrompt += `\n\nالآيات الكريمة المحددة للتسميع:
+- السورة: ${targetSurah || 'غير محدد'}
+- الآيات: ${targetAyah || 'غير محدد'}
+- النص المرجعي: "${referenceText}"\n`;
+    }
+
+    teacherPrompt += `
+تفاعل مع الطالب بشكل مباشر وصوتي كمعلم قرآني حنون ومتقن:
+1. ابدأ بعبارة تشجيعية دافئة ومحفزة.
+2. إذا كانت التلاوة صحيحة ومتقنة، أثنِ على حسن أدائه وأحكام تجويده.
+3. إذا وجد أي خطأ في حرف، أو تشكيل، أو حكم تجويد (مثل إخفاء، قلقلة، مد، ترقيق/تفخيم)، وضحه بلطف واذكر النطق الصحيح للكلمة ليتعلمها الطالب فوراً.
+4. تحدث باللغة العربية الفصحى الواضحة والدافئة (في حدود 2-4 جمل مركزة ومفيدة).`;
+
     const analyzeResponse = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: {
         parts: [
           { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
-          {
-            text: `أنت معلم تجويد وتلاوة للقرآن الكريم متفاعل. استمع إلى تلاوة المستخدم.
-قم بالرد بطريقة تشجيعية، وصحح الأخطاء بلطف شديد وبشكل محفز.
-اجعل ردك حوارياً وبطول مناسب. تحدث باللغة العربية الفصحى الواضحة.`,
-          },
+          { text: teacherPrompt },
         ],
       },
     });
@@ -231,12 +266,18 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
 
     let base64Wav: string | null = null;
     try {
+      const cleanTtsText = responseText
+        .replace(/[*#_~`]/g, '')
+        .replace(/﴿[^﴾]*﴾/g, '')
+        .trim()
+        .slice(0, 400);
+
       const ttsResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-preview-tts',
-        contents: [{ parts: [{ text: responseText }] }],
+        contents: [{ parts: [{ text: cleanTtsText }] }],
         config: {
           responseModalities: ['AUDIO'],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
         },
       });
 
@@ -399,7 +440,7 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
     conversationText += `سؤال الطالب: ${trimmedMsg}`;
 
     const analyzeResponse = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: [{ parts: [{ text: conversationText }] }],
       config: {
         maxOutputTokens: 300,
