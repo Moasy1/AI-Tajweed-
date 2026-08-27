@@ -153,13 +153,16 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
 4. أعد النتيجة بصيغة JSON مطابقة للمخطط المحدد بدقة كاملة.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        parts: [
-          { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
-          { text: promptText },
-        ],
-      },
+      model: 'gemini-3.6-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
+            { text: promptText },
+          ],
+        },
+      ],
       config: {
         responseMimeType: 'application/json',
         responseSchema: {
@@ -252,13 +255,16 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
 4. تحدث باللغة العربية الفصحى الواضحة والدافئة (في حدود 2-4 جمل مركزة ومفيدة).`;
 
     const analyzeResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        parts: [
-          { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
-          { text: teacherPrompt },
-        ],
-      },
+      model: 'gemini-3.6-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
+            { text: teacherPrompt },
+          ],
+        },
+      ],
     });
 
     const responseText = analyzeResponse.text;
@@ -440,7 +446,7 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
     conversationText += `سؤال الطالب: ${trimmedMsg}`;
 
     const analyzeResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: [{ parts: [{ text: conversationText }] }],
       config: {
         maxOutputTokens: 300,
