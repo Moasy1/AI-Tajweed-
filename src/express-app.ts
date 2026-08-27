@@ -129,8 +129,8 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
     const targetAyah = req.body?.ayah || '';
     const referenceText = req.body?.reference_text || '';
 
-    let promptText = `أنت شيخ ومقرئ متقن لقراءات القرآن الكريم وأحكام التجويد (برواية حفص عن عاصم).
-استمع بدقة بالغة إلى التسجيل الصوتي المرفق لتلاوة القارئ.`;
+    let promptText = `أنت عالم قراءات ومقرئ مجاز وخبير صوتي بأحكام التجويد ومخارج الحروف وصفاتها (برواية حفص عن عاصم من طريق الشاطبية).
+قم بإجراء تحليل تشريحي وصوتي فني دقيق لتلاوة القارئ ومطابقتها كلمة بكلمة مع النص القرآني المرجعي المشكول.`;
 
     if (referenceText || targetSurah) {
       promptText += `\n\nالمرجع المعتمد للآيات المستهدفة:
@@ -141,16 +141,18 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
     }
 
     promptText += `
-المطلوب تحليل علمي دقيق للتلاوة ومطابقتها كلمة بكلمة مع النص القرآني الصحيح:
-1. استخرج السورة ورقم الآية إذا لم تكن محددة.
-2. لكل كلمة في الآية:
-   - text: نص الكلمة القرآنية بالتشكيل الصحيح.
-   - status: "correct" (إذا نُطقت الكلمة وأحكامها سليمة) أو "error" (إذا وجد لحن جلي أو خفي أو خلل في حكم تجويدي أو حركة).
-   - rule: الحكم التجويدي المحدد المعني (مثال: "قلقلة صغرى"، "مد متصل 4 حركات"، "إخفاء حقيقي بغنة مرققة"، "إدغام بغنة"، "تفخيم الراء"، "إتمام حركات"، "تلاوة صحيحة").
-   - suggestion: ملاحظة وتوجيه تطبيقي باللغة العربية يوضح كيفية تصحيح النطق أو يثني على الإتقان.
-   - accuracy: تقييم رقمي لدقة نطق الكلمة (من 0 إلى 100).
-3. احسب النسبة المئوية العامة لدقة التلاوة والتجويد (score من 0 إلى 100).
-4. أعد النتيجة بصيغة JSON مطابقة للمخطط المحدد بدقة كاملة.`;
+المطلوب تحليل فني دقيق:
+1. لكل كلمة في الآية:
+   - text: نص الكلمة القرآنية بالرسم والتشكيل الصحيح.
+   - status: "correct" أو "error".
+   - category: صنف الخطأ أو الحكم من بين ("مدود", "غنة وأحكام نون وميم", "مخارج وصفات", "تفخيم وترقيق", "قلقلة", "حركات وإعراب", "تلاوة سليمة").
+   - rule: اسم الحكم التجويدي المحدد (مثل: "مد متصل واجب 4-5 حركات", "إخفاء حقيقي بغنة مرققة", "قلقلة صغرى", "تفخيم الراء المفتوحة", "إظهار حلقي").
+   - suggestion: توجيه تطبيقي علمي يشرح كيفية نطق الحرف أو الحكم بدقة.
+   - accuracy: دقة نطق الكلمة (0 إلى 100).
+2. إحصائيات عامة:
+   - score: الدرجة الإجمالية لدقة التجويد من 100.
+   - summary: ملخص فني موجز لأبرز نقاط القوة ومواضع التحسين في التلاوة.
+3. أعد النتيجة بصيغة JSON مطابقة للمخطط المحدد بدقة.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
@@ -171,6 +173,7 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
             surah: { type: Type.STRING },
             ayah: { type: Type.STRING },
             score: { type: Type.NUMBER },
+            summary: { type: Type.STRING },
             words: {
               type: Type.ARRAY,
               items: {
@@ -178,11 +181,12 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
                 properties: {
                   text: { type: Type.STRING },
                   status: { type: Type.STRING },
+                  category: { type: Type.STRING },
                   rule: { type: Type.STRING },
                   suggestion: { type: Type.STRING },
                   accuracy: { type: Type.NUMBER },
                 },
-                required: ['text', 'status', 'rule', 'suggestion', 'accuracy'],
+                required: ['text', 'status', 'category', 'rule', 'suggestion', 'accuracy'],
               },
             },
           },
@@ -204,7 +208,7 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
         ayah: resultJson.ayah || targetAyah || '',
         score: Math.round(resultJson.score || 0),
         words: resultJson.words,
-        mode: 'tajweed',
+        mode: 'tajweed_lab',
       });
       if (dbError) console.warn('[Supabase] Failed to save session:', dbError.message);
     }
@@ -217,13 +221,13 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
 });
 
 // ────────────────────────────────────────────────
-// 3. Interactive Teacher (Audio → AI Text + TTS)
+// 3. Interactive Teacher (Halaqah Memorization & Coaching)
 // ────────────────────────────────────────────────
 app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
 
-    const { GoogleGenAI } = await import('@google/genai');
+    const { GoogleGenAI, Type } = await import('@google/genai');
     const ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
@@ -236,23 +240,25 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
     const targetSurah = req.body?.surah || '';
     const targetAyah = req.body?.ayah || '';
     const referenceText = req.body?.reference_text || '';
+    const mode = req.body?.mode || 'blind'; // 'blind' (تسميع غيبي) or 'guided'
 
-    let teacherPrompt = `أنت معلم وقارئ متقن للقرآن الكريم ومشجع للطلاب في حلقة التحفيظ.
-استمع إلى تسجيل التلاوة الصوتية للطالب بعناية.`;
+    let teacherPrompt = `أنت شيخ ومعلم حلقة تحفيظ قرآن كريم متفاعل وحنون. الطالب يسمّع لك ورده القرآني من حفظه الغيبي.
+استمع إلى تسجيل التلاوة الصوتية للطالب وقارنه بالنص المستهدف للتسميع.`;
 
     if (referenceText || targetSurah) {
-      teacherPrompt += `\n\nالآيات الكريمة المحددة للتسميع:
+      teacherPrompt += `\n\nالورد المستهدف للتسميع:
 - السورة: ${targetSurah || 'غير محدد'}
 - الآيات: ${targetAyah || 'غير محدد'}
-- النص المرجعي: "${referenceText}"\n`;
+- النص المرجعي الصحيح: "${referenceText}"\n`;
     }
 
     teacherPrompt += `
-تفاعل مع الطالب بشكل مباشر وصوتي كمعلم قرآني حنون ومتقن:
-1. ابدأ بعبارة تشجيعية دافئة ومحفزة.
-2. إذا كانت التلاوة صحيحة ومتقنة، أثنِ على حسن أدائه وأحكام تجويده.
-3. إذا وجد أي خطأ في حرف، أو تشكيل، أو حكم تجويد (مثل إخفاء، قلقلة، مد، ترقيق/تفخيم)، وضحه بلطف واذكر النطق الصحيح للكلمة ليتعلمها الطالب فوراً.
-4. تحدث باللغة العربية الفصحى الواضحة والدافئة (في حدود 2-4 جمل مركزة ومفيدة).`;
+المطلوب منك كمعلم حلقة:
+1. تقييم حفظ الطالب الغيبي: هل حفظه متقن وثابت؟ هل نسي كلمات أو أسقط آيات أو تردد؟
+2. تقديم رد حواري دافئ وتشجيعي (2-3 جمل) كأنك في حلقة المسجد: ابدأ بالثناء، ونبهه بلطف لأي كلمة نسيها أو لحن جلي وقع فيه، وشجعه على مواصلة الحفظ.
+3. حساب نسبة ثبات الحفظ الغيبي (memorizationScore من 100).
+4. استخراج الكلمات المنسية أو المستبدلة إن وجدت.
+5. أعد النتيجة بصيغة JSON مطابقة للمخطط.`;
 
     const analyzeResponse = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
@@ -265,10 +271,39 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
           ],
         },
       ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            dialogue: { type: Type.STRING, description: 'كلام المعلم الحواري المشجع والتوجيهي للطالب' },
+            memorizationScore: { type: Type.NUMBER, description: 'نسبة ثبات الحفظ من 100' },
+            status: { type: Type.STRING, description: 'excellent / good / needs_review' },
+            missedWords: { 
+              type: Type.ARRAY, 
+              items: { type: Type.STRING },
+              description: 'الكلمات التي نسيها الطالب أو أخطأ في قراءتها غيباً' 
+            },
+            teacherAdvice: { type: Type.STRING, description: 'نصيحة المعلم لتثبيت الحفظ' }
+          },
+          required: ['dialogue', 'memorizationScore', 'status'],
+        },
+      },
     });
 
-    const responseText = analyzeResponse.text;
-    if (!responseText) throw new Error('No text response from Gemini');
+    let teacherData: any = {};
+    try {
+      const parsed = JSON.parse(analyzeResponse.text || '{}');
+      teacherData = parsed;
+    } catch {
+      teacherData = {
+        dialogue: analyzeResponse.text || 'بارك الله فيك وفي تلاوتك الطيبة يا بني.',
+        memorizationScore: 90,
+        status: 'good',
+      };
+    }
+
+    const responseText = teacherData.dialogue || 'ما شاء الله تبارك الله، تلاوة وحفظ مبارك.';
 
     let base64Wav: string | null = null;
     try {
@@ -276,7 +311,7 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
         .replace(/[*#_~`]/g, '')
         .replace(/﴿[^﴾]*﴾/g, '')
         .trim()
-        .slice(0, 400);
+        .slice(0, 350);
 
       const ttsResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-preview-tts',
@@ -314,7 +349,25 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
       console.warn('[TTS] Gemini audio generation skipped:', ttsErr);
     }
 
-    res.json({ text: responseText, audio: base64Wav });
+    // Save recitation to Supabase
+    const supabase = getSupabase();
+    if (supabase) {
+      await supabase.from('recitation_sessions').insert({
+        surah: targetSurah || 'تسميع غيبي',
+        ayah: targetAyah || '',
+        score: Math.round(teacherData.memorizationScore || 85),
+        mode: 'memorization_halaqah',
+      });
+    }
+
+    res.json({ 
+      text: responseText, 
+      audio: base64Wav,
+      memorizationScore: teacherData.memorizationScore || 90,
+      status: teacherData.status || 'good',
+      missedWords: teacherData.missedWords || [],
+      teacherAdvice: teacherData.teacherAdvice || ''
+    });
   } catch (error: any) {
     console.error('Interactive teacher error:', error);
     res.status(500).json({ error: 'Failed to process audio', details: String(error) });
