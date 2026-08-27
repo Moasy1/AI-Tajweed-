@@ -34,10 +34,10 @@ app.use('/api/mushaf', mushafRouter);
 
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please slow down.' },
+  message: { error: 'يرجى الانتظار بضع ثوانٍ قبل المحاولة مجدداً.' },
 });
 
 // ────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Loader2, 
   Waves, 
@@ -17,7 +17,9 @@ import {
   GraduationCap,
   ShieldCheck,
   Check,
-  HelpCircle
+  HelpCircle,
+  Zap,
+  VolumeX
 } from 'lucide-react';
 
 type CallState = 'idle' | 'recording' | 'analyzing' | 'feedback' | 'error';
@@ -50,12 +52,19 @@ export default function InteractiveTeacher() {
   
   const [surah, setSurah] = useState<Surah | null>(null);
   const [allSurahs, setAllSurahs] = useState<{number: number, name: string}[]>([]);
-  const [selectedSurahNumber, setSelectedSurahNumber] = useState<number>(67); // Surah Al-Mulk by default
+  const [selectedSurahNumber, setSelectedSurahNumber] = useState<number>(67); // Surah Al-Mulk
   const [startAyah, setStartAyah] = useState<number>(1);
   const [endAyah, setEndAyah] = useState<number>(5);
   
   // Memorization Mode
   const [viewMode, setViewMode] = useState<MemorizationViewMode>('hidden');
+
+  // Smart Auto-Silence Detection (VAD)
+  const [autoSilenceDetection, setAutoSilenceDetection] = useState<boolean>(true);
+  const [silenceCountdown, setSilenceCountdown] = useState<number | null>(null);
+  const hasSpokenRef = useRef<boolean>(false);
+  const speechStartTimeRef = useRef<number>(0);
+  const silenceTimerRef = useRef<any>(null);
 
   const [playingAyah, setPlayingAyah] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -101,8 +110,6 @@ export default function InteractiveTeacher() {
       .then(data => {
         if (data.data) {
           setSurah(data.data);
-          setStartAyah(1);
-          setEndAyah(Math.min(5, data.data.numberOfAyahs));
           resetTeacherSession();
         }
       })
@@ -122,6 +129,10 @@ export default function InteractiveTeacher() {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -138,14 +149,15 @@ export default function InteractiveTeacher() {
       audioStreamRef.current.getTracks().forEach(track => track.stop());
       audioStreamRef.current = null;
     }
+    setSilenceCountdown(null);
   };
 
-  const getSelectedAyahsText = () => {
+  const getSelectedAyahsText = useCallback(() => {
     if (!surah || !surah.ayahs) return '';
     const sliceStart = Math.max(0, startAyah - 1);
     const sliceEnd = Math.min(surah.ayahs.length, endAyah);
     return surah.ayahs.slice(sliceStart, sliceEnd).map(a => a.text).join(' ');
-  };
+  }, [surah, startAyah, endAyah]);
 
   const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
@@ -160,10 +172,75 @@ export default function InteractiveTeacher() {
     }
   };
 
+  // Submit recorded audio to teacher
+  const submitRecitationAudio = async () => {
+    cleanupAudioNodes();
+    setCallState('analyzing');
+    setTranscript('المعلم يستمع لتسميعك الغيبي ويراجع ثبات الحفظ والكلمات...');
+
+    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+    const referenceText = getSelectedAyahsText();
+    const surahName = surah ? surah.name : 'سورة الملك';
+    const ayahRange = `${startAyah} إلى ${endAyah}`;
+
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'memorization.webm');
+    formData.append('surah', surahName);
+    formData.append('ayah', ayahRange);
+    formData.append('reference_text', referenceText);
+    formData.append('mode', viewMode);
+
+    try {
+      const res = await fetch('/api/interactive-teacher', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Server error');
+      }
+
+      const teacherText = data.text || 'ما شاء الله، بارك الله في حفظك وتلاوتك.';
+      setTranscript(teacherText);
+      setFeedbackData({
+        dialogue: teacherText,
+        memorizationScore: data.memorizationScore || 90,
+        status: data.status || 'good',
+        missedWords: data.missedWords || [],
+        teacherAdvice: data.teacherAdvice || ''
+      });
+
+      if (data.audio) {
+        const audioSrc = `data:audio/wav;base64,${data.audio}`;
+        setTeacherAudioUrl(audioSrc);
+        const audio = new Audio(audioSrc);
+        teacherAudioRef.current = audio;
+        setIsTeacherAudioPlaying(true);
+        audio.onended = () => setIsTeacherAudioPlaying(false);
+        audio.onerror = () => {
+          setIsTeacherAudioPlaying(false);
+          speakText(teacherText);
+        };
+        audio.play().catch(() => speakText(teacherText));
+      } else {
+        speakText(teacherText);
+      }
+
+      setCallState('feedback');
+    } catch (err: any) {
+      console.error('Error contacting teacher:', err);
+      setCallState('error');
+      setTranscript('حدث خطأ أثناء التواصل مع المعلم: ' + (err.message || 'يرجى المحاولة مجدداً'));
+    }
+  };
+
   const startRecitation = async () => {
     cleanupAudioNodes();
     setFeedbackData(null);
     setTeacherAudioUrl(null);
+    hasSpokenRef.current = false;
+    speechStartTimeRef.current = Date.now();
     if (teacherAudioRef.current) teacherAudioRef.current.pause();
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
 
@@ -184,6 +261,8 @@ export default function InteractiveTeacher() {
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
+      let silenceStartTime: number | null = null;
+
       const updateVolume = () => {
         if (!analyserRef.current) return;
         analyserRef.current.getByteFrequencyData(dataArray);
@@ -192,7 +271,39 @@ export default function InteractiveTeacher() {
           sum += dataArray[i];
         }
         const avg = sum / bufferLength;
-        setAudioLevel(Math.min(100, Math.round(avg * 2)));
+        const normalized = Math.min(100, Math.round(avg * 2));
+        setAudioLevel(normalized);
+
+        // Voice Activity & Silence Detection (VAD)
+        if (autoSilenceDetection) {
+          const now = Date.now();
+          const elapsed = (now - speechStartTimeRef.current) / 1000;
+
+          if (normalized > 18) {
+            hasSpokenRef.current = true;
+            silenceStartTime = null;
+            setSilenceCountdown(null);
+          } else if (hasSpokenRef.current && elapsed > 3) {
+            // User was speaking, now went quiet
+            if (!silenceStartTime) {
+              silenceStartTime = now;
+            } else {
+              const quietDuration = (now - silenceStartTime) / 1000;
+              if (quietDuration > 0.8) {
+                const remaining = Math.max(0, 2.0 - quietDuration);
+                setSilenceCountdown(Math.ceil(remaining));
+              }
+              if (quietDuration >= 2.0) {
+                // Auto-finish recitation!
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                  mediaRecorderRef.current.stop();
+                  return;
+                }
+              }
+            }
+          }
+        }
+
         animationFrameRef.current = requestAnimationFrame(updateVolume);
       };
       updateVolume();
@@ -205,66 +316,8 @@ export default function InteractiveTeacher() {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
-      mediaRecorder.onstop = async () => {
-        cleanupAudioNodes();
-        setCallState('analyzing');
-        setTranscript('المعلم يستمع لتسميعك الغيبي ويراجع ثبات الحفظ والكلمات...');
-
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const referenceText = getSelectedAyahsText();
-        const surahName = surah ? surah.name : 'سورة الملك';
-        const ayahRange = `${startAyah} إلى ${endAyah}`;
-
-        const formData = new FormData();
-        formData.append('audio', audioBlob, 'memorization.webm');
-        formData.append('surah', surahName);
-        formData.append('ayah', ayahRange);
-        formData.append('reference_text', referenceText);
-        formData.append('mode', viewMode);
-
-        try {
-          const res = await fetch('/api/interactive-teacher', {
-            method: 'POST',
-            body: formData,
-          });
-
-          const data = await res.json();
-          if (!res.ok || data.error) {
-            throw new Error(data.error || 'Server error');
-          }
-
-          const teacherText = data.text || 'ما شاء الله، بارك الله في حفظك.';
-          setTranscript(teacherText);
-          setFeedbackData({
-            dialogue: teacherText,
-            memorizationScore: data.memorizationScore || 90,
-            status: data.status || 'good',
-            missedWords: data.missedWords || [],
-            teacherAdvice: data.teacherAdvice || ''
-          });
-
-          if (data.audio) {
-            const audioSrc = `data:audio/wav;base64,${data.audio}`;
-            setTeacherAudioUrl(audioSrc);
-            const audio = new Audio(audioSrc);
-            teacherAudioRef.current = audio;
-            setIsTeacherAudioPlaying(true);
-            audio.onended = () => setIsTeacherAudioPlaying(false);
-            audio.onerror = () => {
-              setIsTeacherAudioPlaying(false);
-              speakText(teacherText);
-            };
-            audio.play().catch(() => speakText(teacherText));
-          } else {
-            speakText(teacherText);
-          }
-
-          setCallState('feedback');
-        } catch (err: any) {
-          console.error('Error contacting teacher:', err);
-          setCallState('error');
-          setTranscript('حدث خطأ أثناء التواصل مع المعلم. يرجى المحاولة مرة أخرى.');
-        }
+      mediaRecorder.onstop = () => {
+        submitRecitationAudio();
       };
 
       mediaRecorder.start();
@@ -380,43 +433,60 @@ export default function InteractiveTeacher() {
           <p className="text-slate-500 mt-1 text-sm md:text-base">تسميع الآيات من حفظك ومتابعة ثبات الورد مع المعلم الذكي</p>
         </div>
 
-        {/* View Mode Controls */}
-        <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm text-xs font-bold">
+        {/* View Mode Controls & VAD Toggle */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Smart VAD Toggle */}
           <button
-            onClick={() => setViewMode('hidden')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all ${
-              viewMode === 'hidden'
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            onClick={() => setAutoSilenceDetection(!autoSilenceDetection)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+              autoSilenceDetection 
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm' 
+                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
             }`}
+            title="يرصد انتهاء تلاوتك ويرسل التسجيل تلقائياً دون الحاجة للضغط على زر إنهاء"
           >
-            <EyeOff className="w-4 h-4" />
-            <span>إخفاء المصحف (غيبي)</span>
+            <Zap className={`w-3.5 h-3.5 ${autoSilenceDetection ? 'text-emerald-600 fill-emerald-600' : 'text-slate-400'}`} />
+            <span>الإنهاء التلقائي عند السكوت: {autoSilenceDetection ? 'مفعل' : 'معطل'}</span>
           </button>
 
-          <button
-            onClick={() => setViewMode('first_words')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all ${
-              viewMode === 'first_words'
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <HelpCircle className="w-4 h-4" />
-            <span>بدايات الآيات</span>
-          </button>
+          {/* Memorization Mode Pills */}
+          <div className="flex items-center gap-1 bg-white p-1 rounded-2xl border border-slate-200 shadow-sm text-xs font-bold">
+            <button
+              onClick={() => setViewMode('hidden')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all ${
+                viewMode === 'hidden'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              <span>غيبي</span>
+            </button>
 
-          <button
-            onClick={() => setViewMode('visible')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all ${
-              viewMode === 'visible'
-                ? 'bg-teal-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Eye className="w-4 h-4" />
-            <span>مصحف مفتوح</span>
-          </button>
+            <button
+              onClick={() => setViewMode('first_words')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all ${
+                viewMode === 'first_words'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>تلميحات</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('visible')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all ${
+                viewMode === 'visible'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>مصحف</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -432,7 +502,11 @@ export default function InteractiveTeacher() {
               <label className="text-xs font-bold text-slate-600 shrink-0">سورة الورد:</label>
               <select 
                 value={selectedSurahNumber} 
-                onChange={(e) => setSelectedSurahNumber(Number(e.target.value))}
+                onChange={(e) => {
+                  setSelectedSurahNumber(Number(e.target.value));
+                  setStartAyah(1);
+                  setEndAyah(5);
+                }}
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-sm"
               >
                 {allSurahs.map((s) => (
@@ -631,9 +705,16 @@ export default function InteractiveTeacher() {
                     ))}
                   </div>
 
-                  <div className="bg-red-50 text-red-800 text-xs font-bold p-2.5 rounded-xl border border-red-200">
-                    🎙️ المعلم يستمع لتسميعك الغيبي الآن بإنصات... اقرأ بهدوء واضغط الزر الأحمر عند الانتهاء.
-                  </div>
+                  {/* Silence Countdown Indicator */}
+                  {silenceCountdown !== null ? (
+                    <div className="bg-amber-50 text-amber-900 text-xs font-bold p-2.5 rounded-xl border border-amber-200 animate-pulse">
+                      ⏱️ تم رصد سكوتك: سيتم إرسال التلاوة خلال {silenceCountdown} ثانية...
+                    </div>
+                  ) : (
+                    <div className="bg-red-50 text-red-800 text-xs font-bold p-2.5 rounded-xl border border-red-200">
+                      🎙️ المعلم يستمع لتسميعك الغيبي... اقرأ بهدوء، وسيرسل التسجيل تلقائياً عند انتهاء تلاوتك.
+                    </div>
+                  )}
                 </div>
               )}
 

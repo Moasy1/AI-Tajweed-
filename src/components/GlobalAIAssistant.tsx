@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Sparkles,
   MessageSquare,
@@ -12,27 +12,42 @@ import {
   RotateCcw,
   BookOpen,
   HelpCircle,
-  Check,
   Copy,
   ChevronDown,
   Maximize2,
   Minimize2,
-  Lightbulb,
   Bot,
   User,
   Loader2,
+  Compass,
+  Radio,
+  GraduationCap,
+  Sliders,
+  ExternalLink,
+  Search,
+  CheckCircle2
 } from 'lucide-react';
+
+interface ChatAction {
+  label: string;
+  type: 'navigate' | 'radio' | 'copy';
+  path?: string;
+  icon?: string;
+}
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   audio?: string | null;
+  actions?: ChatAction[];
   timestamp: string;
 }
 
 export default function GlobalAIAssistant() {
   const location = useLocation();
+  const navigate = useNavigate();
+
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -40,7 +55,6 @@ export default function GlobalAIAssistant() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [hasNewTip, setHasNewTip] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -53,61 +67,41 @@ export default function GlobalAIAssistant() {
       case '/mushaf':
         return {
           title: 'مصحف المدينة والتفسير',
-          tagline: 'أنا معك في المصحف لشرح وتدبر الآيات استناداً للتفسير الميسر 📖',
+          tagline: 'مساعدك القرآني: أستطيع فتح أي سورة، تفسير الآيات، والبحث الموضوعي 📖',
           quickPrompts: [
-            'اشرح لي تفسير الآية بأسلوب مبسط',
-            'ما هي الفوائد الإيمانية والتربوية المستنبطة؟',
-            'وضح لي غريب الكلمات ومعانيها الدقيقة',
+            'ما هي السور والآيات التي تتحدث عن السكينة والاطمئنان؟',
+            'افتح لي سورة الكهف الآية 10 مع التفسير الميسر',
+            'ما المعنى الدقيق لكلمة (الصمد) في سورة الإخلاص؟',
           ],
         };
       case '/tajweed':
         return {
-          title: 'التسميع والتجويد',
-          tagline: 'جاهز لمساعدتك في تصحيح الأحكام ومخارج وصفات الحروف 🎙️',
+          title: 'معمل التجويد والمطابقة',
+          tagline: 'جاهز لمساعدتك في فحص أحكام التجويد ومخارج الحروف والمقارنة مع القراء 🔬',
           quickPrompts: [
-            'ما هو حكم الإخفاء الحقيقي مع مثال؟',
-            'كيف أضبط مخرج حرف القاف أو الضاد بشكل صحيح؟',
-            'ما الفرق بين المد المتصل والمد المنفصل وكم حركاته؟',
+            'كيف أضبط مخرج حرف القاف والضاد بدقة؟',
+            'ما الفرق بين المد المتصل والمنفصل وكم عدد حركاته؟',
+            'ما هي مراتب الغنة في أحكام النون والميم المشددتين؟',
           ],
         };
       case '/teacher':
         return {
-          title: 'المعلم التفاعلي',
-          tagline: 'معك للاستماع والتسميع وتقديم التوجيهات القرآنية المباشرة 💡',
+          title: 'حلقة التسميع الغيبي',
+          tagline: 'معك لتثبيت الحفظ، مراجعة الورد الغيبي، وتوجيهك خطوة بخطوة 🎓',
           quickPrompts: [
-            'كيف أثبت حفظي لسورة الملك؟',
-            'شجعني بحديث شريف عن فضل تلاوة القرآن',
-            'ما هي أفضل أوقات المراجعة والحفظ؟',
-          ],
-        };
-      case '/ijazah':
-        return {
-          title: 'طلب الإجازة القرآنية',
-          tagline: 'أرشدك لشروط الإتقان ومتطلبات السند المتصل مع المشايخ 📜',
-          quickPrompts: [
-            'ما هي معايير القبول لنيل الإجازة القرآنية؟',
-            'كيف أستعد لاختبار التلاوة بالسند المتصل؟',
-            'ما الفرق بين القراءات والروايات المعتمدة؟',
-          ],
-        };
-      case '/kids':
-        return {
-          title: 'واجهة الأطفال',
-          tagline: 'مرحباً يا بطل القرآن! أنا صديقك الذكي لمساعدتك في حفظ الآيات 🌟',
-          quickPrompts: [
-            'احكِ لي قصة قصيرة وممتعة من القرآن الكريم',
-            'شجعني بكلمات جميلة لأنني قرأت اليوم!',
-            'كيف أحصل على نجوم وجوائز أكثر في التطبيق؟',
+            'كيف أثبت حفظي لسورة الملك بدون نسيان؟',
+            'ما هو أفضل وقت لمراجعة الورد اليومي؟',
+            'شجعني بحديث شريف عن أجر حافظ القرآن',
           ],
         };
       default:
         return {
-          title: 'الرئيسية ولوحة المتابعة',
-          tagline: 'مرحباً بك! أنا المعلم القرآني الذكي، كيف أساعدك في رحلتك اليوم؟ ✨',
+          title: 'الموجه والمنسق القرآني الشامل',
+          tagline: 'أنا هنا لمساعدتك في التوجيه السريع لأي سورة، خدمة، أو حكم قرآني 🌟',
           quickPrompts: [
-            'اقترح لي خطة لمراجعة وردي اليومي بانتظام',
-            'ما هي فضائل سورة الكهف أو تبارك؟',
-            'كيف أبدأ حفظ القرآن الكريم خطوة بخطوة؟',
+            'افتح لي حلقة التسميع الغيبي لسورة الملك',
+            'أريد فحص تلاوتي وتجويدي لسورة الفاتحة',
+            'ما هي الآيات التي تتحدث عن بر الوالدين؟',
           ],
         };
     }
@@ -115,151 +109,124 @@ export default function GlobalAIAssistant() {
 
   const pageInfo = getPageInfo(location.pathname);
 
-  // Initialize welcoming message on first load or context switch
   useEffect(() => {
+    // Initial welcome message
     if (messages.length === 0) {
       setMessages([
         {
-          id: 'welcome-msg',
+          id: 'welcome',
           role: 'assistant',
-          text: `السلام عليكم ورحمة الله وبركاته! 🌿\n\nأنا **المعلم القرآني الذكي** في منصة ترتيل AI. أنا متواجد معك في كافة أقسام التطبيق لمساعدتك في:\n- 📖 شرح وتدبر الآيات استناداً لتفسير مصحف المدينة النبوية.\n- 🎙️ توضيح أحكام التجويد ومخارج الحروف وتصحيح الأخطاء.\n- 🗓️ وضع خطط الحفظ والمراجعة ومتابعة الإجازة.\n\nتفضل بسؤالي كتابةً أو بالصوت في أي وقت!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: `السلام عليكم ورحمة الله وبركاته! أنا "الموجه القرآني الذكي" (Quranic Co-Pilot).
+أستطيع مساعدتك في:
+• الانتقال الفوري وتوجيهك لأي سورة أو آية في المصحف.
+• فتح حلقة التسميع الغيبي أو معمل فحص التجويد مباشرة.
+• البحث الموضوعي في آيات القرآن وتفسيرها الميسر.
+
+كيف يمكنني خدمتك في وردك اليوم؟`,
+          timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+          actions: [
+            { label: '📖 فتح مصحف المدينة', type: 'navigate', path: '/mushaf' },
+            { label: '🎓 بدء التسميع الغيبي', type: 'navigate', path: '/teacher' },
+            { label: '🔬 فحص أحكام التجويد', type: 'navigate', path: '/tajweed' }
+          ]
         },
       ]);
     }
-    setHasNewTip(true);
-    const t = setTimeout(() => setHasNewTip(false), 5000);
-    return () => clearTimeout(t);
-  }, [location.pathname]);
+  }, []);
 
-  // Auto scroll to bottom
   useEffect(() => {
-    if (isOpen && !isMinimized) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, isOpen, isMinimized]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
 
-  // Handle Speech Recognition (Web Speech API)
-  const toggleSpeechRecognition = () => {
-    if (isRecording) {
-      if (recognitionRef.current) recognitionRef.current.stop();
-      setIsRecording(false);
-      return;
-    }
-
+  // Speech Recognition setup (Web Speech API)
+  useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('التعرف الصوتي المباشر غير مدعوم في متصفحك الحالي، يمكنك الكتابة في مربع الرسائل.');
-      return;
-    }
-
-    try {
+    if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognitionRef.current = recognition;
       recognition.lang = 'ar-SA';
       recognition.continuous = false;
       recognition.interimResults = false;
 
-      recognition.onstart = () => {
-        setIsRecording(true);
-      };
-
       recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
-        if (transcript) {
-          setInputMessage(transcript);
-          sendMessage(transcript);
-        }
-      };
-
-      recognition.onerror = (e: any) => {
-        console.warn('Speech recognition error:', e);
+        setInputMessage(transcript);
         setIsRecording(false);
+        handleSendMessage(transcript);
       };
 
-      recognition.onend = () => {
-        setIsRecording(false);
-      };
+      recognition.onerror = () => setIsRecording(false);
+      recognition.onend = () => setIsRecording(false);
 
-      recognition.start();
-    } catch (err) {
-      console.error('Speech recognition init error:', err);
-      setIsRecording(false);
+      recognitionRef.current = recognition;
     }
-  };
+  }, []);
 
-  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
-  const [audioLoadingId, setAudioLoadingId] = useState<string | null>(null);
-
-  // Fetch and play High-Fidelity Natural Human Voice from Gemini
-  const fetchAndPlayNaturalVoice = async (msgId: string, text: string) => {
-    if (!voiceEnabled) return;
-    try {
-      setAudioLoadingId(msgId);
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-      }
-
-      const res = await fetch('/api/assistant/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          voice: 'Charon', // Natural scholarly human teacher voice
-        }),
-      });
-
-      if (!res.ok) throw new Error('TTS failed');
-      const data = await res.json();
-      if (data.audio) {
-        // Cache audio onto the message
-        setMessages((prev) =>
-          prev.map((m) => (m.id === msgId ? { ...m, audio: data.audio } : m))
-        );
-        const audio = new Audio(`data:audio/wav;base64,${data.audio}`);
-        audioPlayerRef.current = audio;
-        setPlayingAudioId(msgId);
-        audio.play().catch((e) => console.warn('Audio play error:', e));
-        audio.onended = () => setPlayingAudioId(null);
-      }
-    } catch (err) {
-      console.warn('Natural voice playback error:', err);
-    } finally {
-      setAudioLoadingId(null);
-    }
-  };
-
-  // Play existing or new natural audio
-  const handlePlayVoice = (msg: ChatMessage) => {
-    if (playingAudioId === msg.id) {
-      if (audioPlayerRef.current) audioPlayerRef.current.pause();
-      setPlayingAudioId(null);
+  const toggleRecording = () => {
+    if (!recognitionRef.current) {
+      alert('التعرف على الصوت غير مدعوم في متصفحك الحالي، يرجى استخدام متصفح حديث.');
       return;
     }
 
-    if (msg.audio) {
-      if (audioPlayerRef.current) audioPlayerRef.current.pause();
-      const audio = new Audio(`data:audio/wav;base64,${msg.audio}`);
-      audioPlayerRef.current = audio;
-      setPlayingAudioId(msg.id);
-      audio.play().catch((e) => console.warn('Audio play error:', e));
-      audio.onended = () => setPlayingAudioId(null);
+    if (isRecording) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
     } else {
-      fetchAndPlayNaturalVoice(msg.id, msg.text);
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } catch (err) {
+        setIsRecording(false);
+      }
     }
   };
 
-  // Send message to assistant (Instant Text Delivery + Parallel Natural Voice)
-  const sendMessage = async (textToSend?: string) => {
-    const text = (textToSend || inputMessage).trim();
-    if (!text || isLoading) return;
+  // Smart Intent & Action Parser
+  const parseSmartActions = (userQuery: string): ChatAction[] => {
+    const q = userQuery.toLowerCase();
+    const actions: ChatAction[] = [];
 
-    const userMsgId = Date.now().toString();
+    if (q.includes('تسميع') || q.includes('حفظ') || q.includes('معلم') || q.includes('غيبي') || q.includes('الملك')) {
+      actions.push({ label: '🎓 انتقال لحلقة التسميع الغيبي', type: 'navigate', path: '/teacher' });
+    }
+    if (q.includes('تجويد') || q.includes('مخرج') || q.includes('حكم') || q.includes('مد') || q.includes('غنة') || q.includes('قلقلة') || q.includes('فحص')) {
+      actions.push({ label: '🔬 انتقال لمعمل التجويد', type: 'navigate', path: '/tajweed' });
+    }
+    if (q.includes('مصحف') || q.includes('تفسير') || q.includes('آية') || q.includes('سورة') || q.includes('قراءة') || q.includes('الكهف')) {
+      actions.push({ label: '📖 فتح مصحف المدينة والتفسير', type: 'navigate', path: '/mushaf' });
+    }
+    if (q.includes('إجازة') || q.includes('سند') || q.includes('مقرئ')) {
+      actions.push({ label: '📜 طلب الإجازة القرآنية', type: 'navigate', path: '/ijazah' });
+    }
+    if (q.includes('راديو') || q.includes('إذاعة') || q.includes('صوت') || q.includes('الشيخ')) {
+      actions.push({ label: '📻 تشغيل إذاعة القرآن الكريم', type: 'radio' });
+    }
+
+    return actions;
+  };
+
+  const handleActionClick = (action: ChatAction) => {
+    if (action.type === 'navigate' && action.path) {
+      navigate(action.path);
+      setIsOpen(false);
+    } else if (action.type === 'radio') {
+      const radioBtn = document.querySelector('[data-quran-radio-toggle]') as HTMLElement;
+      if (radioBtn) {
+        radioBtn.click();
+      } else {
+        alert('تم تفعيل مشغل القرآن الكريم في الشريط الجانبي.');
+      }
+    }
+  };
+
+  const handleSendMessage = async (textToSend?: string) => {
+    const query = (textToSend || inputMessage).trim();
+    if (!query || isLoading) return;
+
     const userMsg: ChatMessage = {
-      id: userMsgId,
+      id: Date.now().toString(),
       role: 'user',
-      text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      text: query,
+      timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -267,59 +234,61 @@ export default function GlobalAIAssistant() {
     setIsLoading(true);
 
     try {
-      const historyPayload = messages.slice(-4).map((m) => ({
-        role: m.role,
-        text: m.text,
-      }));
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
       const res = await fetch('/api/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: text,
-          context: {
-            pathname: location.pathname,
-            pageTitle: pageInfo.title,
-          },
-          history: historyPayload,
+          message: query,
+          pageContext: location.pathname,
+          pageTitle: pageInfo.title,
+          history: messages.slice(-6).map((m) => ({ role: m.role, text: m.text })),
         }),
-        signal: controller.signal,
       });
-      clearTimeout(timeoutId);
 
       const data = await res.json();
-      const responseText = data.text || 'أنا معك، كيف يمكنني مساعدتك في رحلتك القرآنية؟';
-      const assistantMsgId = (Date.now() + 1).toString();
-      
-      const assistantMsg: ChatMessage = {
-        id: assistantMsgId,
+      const responseText = data.text || 'أهلاً بك، كيف يمكنني إعانتك في تلاوتك وتدبرك؟';
+      const actions = parseSmartActions(query);
+
+      const botMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
         role: 'assistant',
         text: responseText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        actions: actions.length > 0 ? actions : undefined,
+        timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
       };
 
-      setMessages((prev) => [...prev, assistantMsg]);
-      setIsLoading(false);
+      setMessages((prev) => [...prev, botMsg]);
 
-      // Trigger natural high-fidelity voice in parallel if enabled
+      // Voice Audio Response
       if (voiceEnabled) {
-        fetchAndPlayNaturalVoice(assistantMsgId, responseText);
+        fetch('/api/assistant/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: responseText, voice: 'Charon' }),
+        })
+          .then((r) => r.json())
+          .then((ttsData) => {
+            if (ttsData.audio) {
+              const audioSrc = `data:audio/wav;base64,${ttsData.audio}`;
+              if (audioPlayerRef.current) {
+                audioPlayerRef.current.src = audioSrc;
+                audioPlayerRef.current.play().catch(() => {});
+              }
+            }
+          })
+          .catch(() => {});
       }
     } catch (err) {
-      console.warn('Assistant chat response fallback:', err);
-      const fallbackText = 'أهلاً بك! أنا جاهز للإجابة عن أسئلتك في التفسير والتجويد والحفظ.';
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          text: fallbackText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: 'عذراً، حدث انقطاع بسيط في الشبكة. يرجى المحاولة مرة أخرى.',
+          timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -330,121 +299,66 @@ export default function GlobalAIAssistant() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const clearChat = () => {
-    setMessages([
-      {
-        id: 'new-chat-msg',
-        role: 'assistant',
-        text: `تم بدء جلسة محادثة جديدة. أنا المعلم القرآني الذكي معك في قسم **${pageInfo.title}**، كيف أساعدك؟`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
-  };
-
   return (
     <>
-      {/* Floating Trigger Widget (Floating Action Button) */}
+      <audio ref={audioPlayerRef} className="hidden" />
+
+      {/* Floating Trigger Button in Bottom Left */}
       {!isOpen && (
-        <div className="fixed bottom-20 md:bottom-6 left-4 md:left-8 z-40 flex items-center gap-3 select-none animate-in fade-in slide-in-from-bottom-5 duration-300" dir="rtl">
-          {/* Subtle Contextual Hint Tooltip */}
-          {hasNewTip && (
-            <div className="hidden sm:flex items-center gap-2 bg-slate-900/95 text-white border border-emerald-500/40 text-xs px-3.5 py-2 rounded-2xl shadow-xl backdrop-blur-md animate-bounce">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>{pageInfo.tagline}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setHasNewTip(false);
-                }}
-                className="p-0.5 text-slate-400 hover:text-white"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-
-          {/* Floating Avatar / Button */}
-          <button
-            onClick={() => {
-              setIsOpen(true);
-              setIsMinimized(false);
-              setHasNewTip(false);
-            }}
-            className="group relative flex items-center gap-2.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-3 rounded-full shadow-2xl shadow-emerald-600/40 border border-emerald-400/30 transition-all duration-300 active:scale-95"
-            title="المعلم القرآني الذكي"
-          >
-            <div className="relative">
-              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                <Bot className="w-5 h-5 text-white" />
-              </div>
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-300 rounded-full border-2 border-slate-900 animate-ping" />
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-slate-900" />
-            </div>
-
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-black tracking-wide leading-none">المعلم الذكي</div>
-              <div className="text-[10px] text-emerald-200/90 font-medium mt-0.5">مساعدك في {pageInfo.title}</div>
-            </div>
-
-            <Sparkles className="w-4 h-4 text-emerald-200 group-hover:rotate-12 transition-transform" />
-          </button>
-        </div>
+        <button
+          onClick={() => setIsOpen(true)}
+          className="fixed bottom-6 left-6 z-50 group flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-full shadow-2xl shadow-teal-700/40 transition-all duration-300 hover:scale-105 active:scale-95 border-2 border-white/30"
+          aria-label="الموجه القرآني الذكي"
+        >
+          <div className="relative">
+            <Compass className="w-5 h-5 animate-spin text-teal-100" style={{ animationDuration: '12s' }} />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-300 rounded-full animate-ping" />
+          </div>
+          <div className="flex flex-col text-right">
+            <span className="text-xs font-extrabold leading-none">الموجه القرآني الذكي</span>
+            <span className="text-[10px] text-teal-100/90 font-medium mt-0.5">أوامر سريعة وتدبر شامل</span>
+          </div>
+        </button>
       )}
 
-      {/* Floating Assistant Modal / Window */}
+      {/* Main Chatbot / Copilot Modal */}
       {isOpen && (
         <div
-          className={`fixed z-50 transition-all duration-300 select-text ${
+          className={`fixed z-50 transition-all duration-300 flex flex-col font-sans ${
             isMinimized
-              ? 'bottom-20 md:bottom-6 left-4 md:left-8 w-80'
-              : 'bottom-20 md:bottom-6 left-3 md:left-8 w-[95vw] sm:w-[440px] h-[580px] max-h-[85vh]'
-          } bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl animate-in zoom-in-95 duration-200`}
-          dir="rtl"
+              ? 'bottom-6 left-6 w-80 h-16 bg-white rounded-2xl shadow-2xl border border-slate-200'
+              : 'bottom-4 left-4 right-4 sm:right-auto sm:left-6 sm:w-[440px] h-[600px] max-h-[88vh] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden'
+          }`}
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 p-4 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="relative w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 shrink-0">
-                <Bot className="w-5 h-5" />
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-slate-900" />
+          <div className="bg-gradient-to-r from-teal-700 via-teal-600 to-emerald-600 text-white p-4 flex items-center justify-between shrink-0 shadow-md">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/20">
+                <Compass className="w-5 h-5 text-white" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-black text-white">المعلم القرآني الذكي</h3>
-                  <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded-full font-bold">
-                    AI
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400 flex items-center gap-1">
-                  <span>سياق:</span>
-                  <span className="text-emerald-400 font-bold">{pageInfo.title}</span>
+                <h3 className="text-sm font-extrabold flex items-center gap-1.5">
+                  <span>الموجه القرآني الذكي</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-white/20 rounded-full">Co-Pilot</span>
+                </h3>
+                <p className="text-[11px] text-teal-100/90 truncate max-w-[200px]">
+                  {pageInfo.title}
                 </p>
               </div>
             </div>
 
-            {/* Controls */}
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setVoiceEnabled(!voiceEnabled)}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  voiceEnabled ? 'text-emerald-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-800'
-                }`}
-                title={voiceEnabled ? 'الصوت مفعل' : 'الصوت معطل'}
+                className={`p-1.5 rounded-lg transition-colors ${voiceEnabled ? 'bg-white/20 text-white' : 'text-white/60 hover:bg-white/10'}`}
+                title={voiceEnabled ? 'كتم الصوت التلقائي' : 'تفعيل الصوت التلقائي'}
               >
                 {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </button>
 
               <button
-                onClick={clearChat}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                title="محادثة جديدة"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-
-              <button
                 onClick={() => setIsMinimized(!isMinimized)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
                 title={isMinimized ? 'تكبير' : 'تصغير'}
               >
                 {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
@@ -452,7 +366,7 @@ export default function GlobalAIAssistant() {
 
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
                 title="إغلاق"
               >
                 <X className="w-4 h-4" />
@@ -460,189 +374,153 @@ export default function GlobalAIAssistant() {
             </div>
           </div>
 
-          {/* Minimized View Header Pill */}
-          {isMinimized && (
-            <div className="p-3 bg-slate-900 text-xs text-slate-300 flex items-center justify-between">
-              <span>انقر لتكبير نافذة المعلم الذكي</span>
-              <button
-                onClick={() => setIsMinimized(false)}
-                className="text-emerald-400 font-bold text-xs hover:underline"
-              >
-                فتح المحادثة ←
-              </button>
-            </div>
-          )}
-
-          {/* Expanded Chat View */}
           {!isMinimized && (
             <>
-              {/* Context Tagline Banner */}
-              <div className="bg-slate-950/60 px-4 py-2 border-b border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between gap-2">
-                <span className="truncate">{pageInfo.tagline}</span>
+              {/* Quick Navigation Action Strip */}
+              <div className="bg-slate-50 border-b border-slate-200/80 px-3 py-2 flex items-center gap-1.5 overflow-x-auto text-[11px] font-bold shrink-0 no-scrollbar">
+                <span className="text-slate-400 shrink-0 text-[10px]">انتقال سريع:</span>
+                <button
+                  onClick={() => handleActionClick({ label: '', type: 'navigate', path: '/teacher' })}
+                  className="px-2.5 py-1 bg-white hover:bg-teal-50 text-teal-800 border border-slate-200 rounded-lg shrink-0 flex items-center gap-1 transition-colors"
+                >
+                  <GraduationCap className="w-3.5 h-3.5 text-teal-600" />
+                  <span>حلقة التسميع</span>
+                </button>
+                <button
+                  onClick={() => handleActionClick({ label: '', type: 'navigate', path: '/tajweed' })}
+                  className="px-2.5 py-1 bg-white hover:bg-blue-50 text-blue-800 border border-slate-200 rounded-lg shrink-0 flex items-center gap-1 transition-colors"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-blue-600" />
+                  <span>معمل التجويد</span>
+                </button>
+                <button
+                  onClick={() => handleActionClick({ label: '', type: 'navigate', path: '/mushaf' })}
+                  className="px-2.5 py-1 bg-white hover:bg-emerald-50 text-emerald-800 border border-slate-200 rounded-lg shrink-0 flex items-center gap-1 transition-colors"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>المصحف</span>
+                </button>
+                <button
+                  onClick={() => handleActionClick({ label: '', type: 'radio' })}
+                  className="px-2.5 py-1 bg-white hover:bg-amber-50 text-amber-800 border border-slate-200 rounded-lg shrink-0 flex items-center gap-1 transition-colors"
+                >
+                  <Radio className="w-3.5 h-3.5 text-amber-600" />
+                  <span>الإذاعة</span>
+                </button>
               </div>
 
               {/* Chat Messages Body */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 mushaf-scroll bg-slate-950/40">
-                {messages.map((msg) => {
-                  const isAssistant = msg.role === 'assistant';
-                  const isCopied = copiedId === msg.id;
-
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} gap-1`}
-                    >
-                      <div className="flex items-center gap-1.5 px-1 text-[10px] text-slate-500">
-                        {isAssistant ? (
-                          <>
-                            <Bot className="w-3 h-3 text-emerald-400" />
-                            <span className="font-bold text-emerald-400">المعلم الذكي</span>
-                          </>
-                        ) : (
-                          <>
-                            <User className="w-3 h-3 text-slate-400" />
-                            <span className="font-bold text-slate-300">أنت</span>
-                          </>
-                        )}
-                        <span>•</span>
-                        <span>{msg.timestamp}</span>
-                      </div>
+              <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-slate-50/50">
+                {messages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex flex-col ${msg.role === 'user' ? 'items-start' : 'items-end'}`}
+                  >
+                    <div className="flex items-start gap-2 max-w-[90%]">
+                      {msg.role === 'assistant' && (
+                        <div className="w-7 h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 mt-1 shadow-sm">
+                          <Bot className="w-4 h-4" />
+                        </div>
+                      )}
 
                       <div
-                        className={`relative group max-w-[88%] p-3.5 rounded-2xl text-xs md:text-sm leading-relaxed ${
-                          isAssistant
-                            ? 'bg-slate-900 border border-slate-800 text-slate-200 shadow-md'
-                            : 'bg-emerald-600 text-white rounded-br-none shadow-md shadow-emerald-600/20'
+                        className={`p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
+                          msg.role === 'user'
+                            ? 'bg-teal-600 text-white rounded-br-none'
+                            : 'bg-white text-slate-800 border border-slate-200/80 rounded-bl-none'
                         }`}
+                        dir="rtl"
                       >
-                        <div
-                          className="whitespace-pre-line space-y-1.5 [&_strong]:text-emerald-300 [&_b]:text-emerald-300"
-                          dangerouslySetInnerHTML={{
-                            __html: msg.text
-                              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                              .replace(/^### (.*$)/gim, '<h4 class="font-bold text-emerald-400 text-sm mt-1">$1</h4>')
-                              .replace(/^## (.*$)/gim, '<h4 class="font-bold text-emerald-400 text-sm mt-1">$1</h4>')
-                              .replace(/^- (.*$)/gim, '<div class="flex items-start gap-1.5 my-0.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0"></span><span>$1</span></div>'),
-                          }}
-                        />
+                        <div className="whitespace-pre-line font-medium">{msg.text}</div>
 
-                        {/* Actions for assistant messages */}
-                        {isAssistant && (
-                          <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
-                            <span className="opacity-70 font-sans">صوت الشيخ المعلم (طبيعي)</span>
-                            <div className="flex items-center gap-2">
+                        {/* Interactive Action Buttons if available */}
+                        {msg.actions && msg.actions.length > 0 && (
+                          <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap gap-1.5">
+                            {msg.actions.map((act, i) => (
                               <button
-                                onClick={() => handlePlayVoice(msg)}
-                                className={`flex items-center gap-1 transition-colors ${
-                                  playingAudioId === msg.id
-                                    ? 'text-emerald-400 font-bold'
-                                    : 'text-slate-400 hover:text-emerald-400'
-                                }`}
-                                title="استماع بصوت المعلم الطبيعي"
+                                key={i}
+                                onClick={() => handleActionClick(act)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-xl text-xs font-bold transition-all border border-teal-200/70 shadow-sm active:scale-95"
                               >
-                                {audioLoadingId === msg.id ? (
-                                  <>
-                                    <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
-                                    <span className="text-[10px]">تحضير الصوت...</span>
-                                  </>
-                                ) : playingAudioId === msg.id ? (
-                                  <>
-                                    <VolumeX className="w-3 h-3 text-rose-400" />
-                                    <span className="text-emerald-400">إيقاف</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Volume2 className="w-3 h-3" />
-                                    <span>استماع</span>
-                                  </>
-                                )}
+                                <span>{act.label}</span>
+                                <ExternalLink className="w-3 h-3 text-teal-600" />
                               </button>
-                              <button
-                                onClick={() => handleCopy(msg.id, msg.text)}
-                                className="text-slate-400 hover:text-emerald-400 flex items-center gap-1"
-                                title="نسخ النص"
-                              >
-                                {isCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                                <span>{isCopied ? 'تم النسخ' : 'نسخ'}</span>
-                              </button>
-                            </div>
+                            ))}
                           </div>
                         )}
                       </div>
+
+                      {msg.role === 'user' && (
+                        <div className="w-7 h-7 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 mt-1">
+                          <User className="w-4 h-4" />
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
+
+                    <span className="text-[10px] text-slate-400 mt-1 px-9">
+                      {msg.timestamp}
+                    </span>
+                  </div>
+                ))}
 
                 {isLoading && (
-                  <div className="flex items-center gap-2 p-3 rounded-2xl bg-slate-900 border border-slate-800 text-xs text-slate-400 w-fit">
-                    <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
-                    <span>المعلم الذكي يكتب الإجابة...</span>
+                  <div className="flex items-center gap-2 text-xs text-teal-700 bg-teal-50/80 p-3 rounded-2xl border border-teal-100 w-fit">
+                    <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
+                    <span>الموجه الذكي يفكر ويستخرج التوجيه القرآني...</span>
                   </div>
                 )}
 
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Contextual Quick Prompts Chips */}
-              <div className="px-3 py-2 bg-slate-900 border-t border-slate-800/80 shrink-0">
-                <div className="text-[10px] text-slate-500 font-bold mb-1.5 flex items-center gap-1">
-                  <Lightbulb className="w-3 h-3 text-amber-400" />
-                  <span>اقتراحات سريعة لـ {pageInfo.title}:</span>
-                </div>
-                <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                  {pageInfo.quickPrompts.map((prompt, i) => (
+              {/* Quick Prompts Carousel */}
+              {pageInfo.quickPrompts && pageInfo.quickPrompts.length > 0 && (
+                <div className="px-3 py-2 bg-white border-t border-slate-100 flex gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                  {pageInfo.quickPrompts.map((prompt, idx) => (
                     <button
-                      key={i}
-                      onClick={() => sendMessage(prompt)}
-                      disabled={isLoading}
-                      className="whitespace-nowrap text-[11px] bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-emerald-300 px-2.5 py-1 rounded-xl border border-slate-700/60 transition-colors disabled:opacity-50 shrink-0"
+                      key={idx}
+                      onClick={() => handleSendMessage(prompt)}
+                      className="px-2.5 py-1 bg-slate-50 hover:bg-teal-50 text-slate-600 hover:text-teal-800 text-[11px] font-bold rounded-lg border border-slate-200/80 whitespace-nowrap transition-colors"
                     >
                       {prompt}
                     </button>
                   ))}
                 </div>
-              </div>
+              )}
 
-              {/* Input Form */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  sendMessage();
-                }}
-                className="p-3 bg-slate-850 border-t border-slate-800 flex items-center gap-2 shrink-0"
-              >
-                {/* Voice Input Button */}
+              {/* Input Area */}
+              <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2 shrink-0">
                 <button
-                  type="button"
-                  onClick={toggleSpeechRecognition}
+                  onClick={toggleRecording}
                   className={`p-2.5 rounded-xl transition-all ${
                     isRecording
                       ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/30'
-                      : 'bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-emerald-400'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                   }`}
-                  title={isRecording ? 'إيقاف التسجيل' : 'تحدث بالصوت'}
+                  title={isRecording ? 'إيقاف التسجيل الصوتي' : 'تحدث بالصوت'}
                 >
-                  {isRecording ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                  {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </button>
 
                 <input
                   type="text"
-                  placeholder="اسأل المعلم الذكي عن أي شيء في التفسير، التجويد، أو الحفظ..."
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  disabled={isLoading}
-                  className="flex-1 bg-slate-900 text-white text-xs px-3.5 py-2.5 rounded-xl border border-slate-700 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="اطلب أي خدمة، سورة، تفسير، أو حكم تجويد..."
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 font-medium"
+                  dir="rtl"
                 />
 
                 <button
-                  type="submit"
+                  onClick={() => handleSendMessage()}
                   disabled={!inputMessage.trim() || isLoading}
-                  className="p-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs disabled:opacity-40 transition-colors shadow-sm"
+                  className="p-2.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors shadow-sm"
                   title="إرسال"
                 >
-                  <Send className="w-4 h-4 rotate-180" />
+                  <Send className="w-4 h-4" />
                 </button>
-              </form>
+              </div>
             </>
           )}
         </div>

@@ -7,11 +7,11 @@ import {
   CheckCircle2, 
   Volume2, 
   Loader2, 
-  Sliders,
-  Scale,
-  Sparkles,
-  Info,
-  ChevronLeft
+  Sliders, 
+  Scale, 
+  Sparkles, 
+  Info, 
+  ChevronLeft 
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
