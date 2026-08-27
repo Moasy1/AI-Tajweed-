@@ -452,31 +452,24 @@ app.post('/api/ijazah', async (req, res) => {
 const assistantCache = new Map<string, { text: string; expiry: number }>();
 
 // ────────────────────────────────────────────────
-// 6. Global Context-Aware AI Assistant Chat (Ultra-Fast)
+// 6. Global Context-Aware AI Assistant & Tadabbur Co-Pilot
 // ────────────────────────────────────────────────
 app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
   try {
-    const { message, context, history } = req.body;
+    const { message, pageContext, pageTitle, context, history } = req.body;
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'message is required' });
     }
 
     const trimmedMsg = message.trim();
-    const pageContext = context?.pathname || 'الرئيسية';
-    const pageTitle = context?.pageTitle || '';
-
-    // Cache check for fast response on repeated questions
-    const cacheKey = `${pageContext}_${trimmedMsg.toLowerCase()}`;
-    const cachedItem = assistantCache.get(cacheKey);
-    if (cachedItem && Date.now() < cachedItem.expiry) {
-      return res.json({ text: cachedItem.text, cached: true });
-    }
+    const activePage = pageContext || context?.pathname || 'الرئيسية';
+    const activeTitle = pageTitle || context?.pageTitle || 'المنصة القرآنية';
 
     const { GoogleGenAI } = await import('@google/genai');
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res.json({
-        text: 'أهلاً بك! أنا المعلم القرآني الذكي. يرجى ضبط مفتاح الذكاء الاصطناعي للاستفادة الكاملة من ميزات التوجيه والتفسير المتقدم.',
+        text: 'أهلاً بك! أنا رفيق التدبر القرآني الذكي. يرجى ضبط مفتاح الذكاء الاصطناعي للاستفادة الكاملة من ميزات التدبر والتفسير.',
       });
     }
 
@@ -485,32 +478,42 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const systemInstruction = `أنت 'المعلم القرآني الذكي' في منصة 'ترتيل AI'.
-السياق الحالي: [${pageContext} - ${pageTitle}].
-تعليمات السرعة والدقة:
-1. قدم إجابة فورية، مركزة وموجزة جداً (بحدود 2-4 فقرات أو نقاط محددة).
-2. استند لتفسير مصحف المدينة النبوية (التفسير الميسر) وأحكام التجويد المعتمدة.
-3. اكتب بأسلوب عربي فصيح رفيق ومحفز.`;
+    const systemInstruction = `أنت 'المعلم ورفيق التدبر القرآني' في منصة 'ترتيل AI'.
+السياق الحالي للمستخدم: [الصفحة: ${activePage} - ${activeTitle}].
+
+رسالتك وهدفك الأساسي:
+مساعدة السائل في تدبر آيات القرآن الكريم، شرح أسرارها البيانية، استخراج الهدايات والفوائد الإيمانية والتربوية، وتوجيهه لكيفية العمل بكتاب الله في حياته اليومية.
+
+قواعد الإجابة المعتمدة:
+1. الاستناد إلى المصادر الموثوقة: (تفسير مصحف المدينة النبوية - التفسير الميسر، تفسير السعدي، تفسير ابن كثير).
+2. عند السؤال عن تدبر أو معنى أو موضوع:
+   - اذكر الآية أو الآيات الكريمة بنصها واسم السورة ورقمها إن كان ذلك يخدم الإجابة.
+   - وضح المعنى الإجمالي والمقصد القرآني ببيان عذب وواضح.
+   - استخرج الفوائد واللطائف الإيمانية (1 - 3 نقاط محددة).
+   - اذكر خطوة عملية لتطبيق الآية والعمل بها.
+3. التحدث بلغة عربية فصيحة، رقيقة، مفعمة بالأدب مع كلام الله، مع استخدام التنسيق الجميل (فقرات ونقاط).`;
 
     let conversationText = `${systemInstruction}\n\n`;
     if (Array.isArray(history) && history.length > 0) {
-      conversationText += `سجل الحوار:\n` + history.slice(-4).map((h: any) => `${h.role === 'user' ? 'الطالب' : 'المعلم'}: ${h.text}`).join('\n') + `\n\n`;
+      conversationText += `سجل المحادثة السابقة:\n` + history.slice(-4).map((h: any) => `${h.role === 'user' ? 'السائل' : 'المعلم'}: ${h.text}`).join('\n') + `\n\n`;
     }
-    conversationText += `سؤال الطالب: ${trimmedMsg}`;
+    conversationText += `سؤال السائل: ${trimmedMsg}`;
 
     const analyzeResponse = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
-      contents: [{ parts: [{ text: conversationText }] }],
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: conversationText }],
+        },
+      ],
       config: {
-        maxOutputTokens: 300,
+        maxOutputTokens: 900,
         temperature: 0.7,
       },
     });
 
-    const responseText = analyzeResponse.text || 'أهلاً بك، كيف يمكنني مساعدتك في رحلتك القرآنية اليوم؟';
-
-    // Store in cache for 1 hour
-    assistantCache.set(cacheKey, { text: responseText, expiry: Date.now() + 3600000 });
+    const responseText = analyzeResponse.text || 'تأمل في كتاب الله، تجد فيه شفاء لقلبك ونوراً لدربك.';
 
     res.json({ text: responseText });
   } catch (error: any) {
