@@ -22,12 +22,14 @@ class GeminiPoolManager {
 
   private initKeys() {
     const rawKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
-    const keyList = rawKeys
+    const envKeyList = rawKeys
       .split(',')
       .map(k => k.trim())
       .filter(k => k.length > 5);
 
-    this.keys = keyList.map(k => ({
+    const uniqueKeys = Array.from(new Set(envKeyList));
+
+    this.keys = uniqueKeys.map(k => ({
       key: k,
       cooldownUntil: 0,
       failureCount: 0,
