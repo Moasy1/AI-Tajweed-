@@ -550,48 +550,37 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const systemInstruction = `You are the "Quranic Co-Pilot & Tadabbur Companion" in Tarteel AI.
-Current User Context: [Page: ${activePage} - ${activeTitle}].
+    const systemInstruction = `أنت المساعد الذكي ورفيق التدبر القرآني في منصة ترتيل AI.
+تحدث تماماً مثل Gemini بأسلوب طبيعي، ذكي، فصيح، ودود ومفعم بالحكمة والعمق.
+أنت قادر على الإجابة على أي سؤال يطرحه المستخدم (في القرآن، التفسير الميسر لمصحف المدينة، التجويد، الحياة اليومية، التدبر، اللغة العربية، أو أي استفسار عام) بلغة السؤال نفسها (عربي، إنجليزي، إلخ).
+عند الاستشهاد بالقرآن، اذكر الآية الكريمة واسم السورة، واشرح المعنى واللطيفة الإيمانية بوضوح.
+كن ذكياً، مختصراً، واثقاً، وتحدث كإنسان حقيقي مفكر وناصح.`;
 
-PRIMARY MISSION:
-Help the user reflect on and understand the Holy Quran, explain verses with high accuracy, extract spiritual and educational wisdom, and guide them in applying the Quran in daily life.
-
-CORE RULES:
-1. MULTILINGUAL FLUENCY:
-   - Detect the language of the user's question (Arabic, English, French, Urdu, Turkish, Indonesian, etc.) and reply FLUENTLY in that EXACT SAME language.
-   - Always keep Quranic verses quoted in original Arabic script (with translation if non-Arabic).
-2. AUTHENTIC SOURCES:
-   - Base all explanations on the official "Tafsir Al-Muyassar (Madinah Mushaf - King Fahd Complex for Printing the Holy Quran)", Tafsir As-Sa'di, and Tafsir Ibn Kathir.
-3. STRUCTURE OF TADABBUR (REFLECTIVE RESPONSE):
-   - 📖 Quranic Verse(s) with Surah name and Ayah number.
-   - 💡 Meaning & Context (Tafsir Al-Muyassar).
-   - 🌟 Spiritual & Practical Reflections (Key Takeaways).
-   - 🎯 Actionable Step (How to practice and live this verse today).
-4. TONE & FORMATTING:
-   - Warm, respectful, inspiring, structured with clean bullet points and bold highlights. Keep it concise, deep, and avoid fluff.`;
-
-    let conversationText = `${systemInstruction}\n\n`;
+    const contents: any[] = [];
     if (Array.isArray(history) && history.length > 0) {
-      conversationText += `Previous Conversation History:\n` + history.slice(-4).map((h: any) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`).join('\n') + `\n\n`;
+      for (const h of history.slice(-6)) {
+        contents.push({
+          role: h.role === 'user' ? 'user' : 'model',
+          parts: [{ text: h.text }],
+        });
+      }
     }
-    conversationText += `User Question: ${trimmedMsg}`;
+    contents.push({
+      role: 'user',
+      parts: [{ text: trimmedMsg }],
+    });
 
     const analyzeResponse = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: conversationText }],
-        },
-      ],
+      contents,
       config: {
-        maxOutputTokens: 950,
-        temperature: 0.7,
+        systemInstruction,
+        maxOutputTokens: 1000,
+        temperature: 0.8,
       },
     });
 
     const responseText = analyzeResponse.text || 'تأمل في كتاب الله، تجد فيه شفاء لقلبك ونوراً لدربك.';
-
     res.json({ text: responseText });
   } catch (error: any) {
     console.warn('Assistant chat fallback triggered:', error?.message || error);
