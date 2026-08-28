@@ -540,9 +540,9 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
     const { GoogleGenAI } = await import('@google/genai');
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.json({
-        text: 'أهلاً بك! أنا رفيق التدبر القرآني. تفضل بطرح سؤالك حول أي آية أو سورة أو حكم تجويدي وسأعينك بالاستناد لتفسير مصحف المدينة النبوية.',
-      });
+      const { generateSmartConversationalReply } = await import('./services/QuranKnowledgeEngine.js');
+      const dynamicReply = await generateSmartConversationalReply(trimmedMsg, history);
+      return res.json({ text: dynamicReply });
     }
 
     const ai = new GoogleGenAI({
@@ -595,9 +595,18 @@ CORE RULES:
     res.json({ text: responseText });
   } catch (error: any) {
     console.warn('Assistant chat fallback triggered:', error?.message || error);
-    res.json({
-      text: `أهلاً بك يا رفيق القرآن! تأمل في كتاب الله وسنة نبيه صلى الله عليه وسلم، وتفضل بطلب أي سورة أو تفسير لأي آية من مصحف المدينة النبوية وسأشرحها لك فوراً.`,
-    });
+    try {
+      const { generateSmartConversationalReply } = await import('./services/QuranKnowledgeEngine.js');
+      const dynamicReply = await generateSmartConversationalReply(req.body?.message || '', req.body?.history || []);
+      res.json({ text: dynamicReply });
+    } catch {
+      res.json({
+        text: `### 📖 هدايات وتدبر القرآن الكريم
+
+أهلاً بك يا رفيق القرآن. القرآن الكريم كتاب هداية ونور، وتدبر آياته يثبت الإيمان ويشرح الصدر.
+يمكنك تصفح السور في مصحف المدينة أو تسميع وردك الغيبي مع المعلم. ما هي الآية أو السورة التي ترغب في تدبرها الآن؟`,
+      });
+    }
   }
 });
 
