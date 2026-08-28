@@ -523,6 +523,23 @@ app.post('/api/ijazah', async (req, res) => {
 // In-memory cache for assistant answers
 const assistantCache = new Map<string, { text: string; expiry: number }>();
 
+// Helper function to call Gemini with intelligent retry on 429 rate limits
+async function generateGeminiWithRetry(ai: any, params: any, maxRetries = 2): Promise<any> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err: any) {
+      const isRateLimit = err?.status === 429 || String(err?.message || '').includes('429') || String(err?.message || '').includes('RESOURCE_EXHAUSTED');
+      if (isRateLimit && attempt < maxRetries) {
+        console.warn(`[Gemini Chat] 429 limit hit, waiting 2s before retry ${attempt + 1}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // ────────────────────────────────────────────────
 // 6. Global Context-Aware AI Assistant & Tadabbur Co-Pilot
 // ────────────────────────────────────────────────
@@ -540,9 +557,9 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
     const { GoogleGenAI } = await import('@google/genai');
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      const { generateSmartConversationalReply } = await import('./services/QuranKnowledgeEngine.js');
-      const dynamicReply = await generateSmartConversationalReply(trimmedMsg, history);
-      return res.json({ text: dynamicReply });
+      return res.json({
+        text: 'يرجى ضبط مفتاح الذكاء الاصطناعي GEMINI_API_KEY في ملف .env للاستمتاع بالمحادثة الكاملة.',
+      });
     }
 
     const ai = new GoogleGenAI({
@@ -550,19 +567,20 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const systemInstruction = `أنت المساعد الذكي ورفيق التدبر القرآني في منصة ترتيل AI.
-تحدث تماماً مثل Gemini بأسلوب طبيعي، ذكي، فصيح، ودود ومفعم بالحكمة والعمق.
-أنت قادر على الإجابة على أي سؤال يطرحه المستخدم (في القرآن، التفسير الميسر لمصحف المدينة، التجويد، الحياة اليومية، التدبر، اللغة العربية، أو أي استفسار عام) بلغة السؤال نفسها (عربي، إنجليزي، إلخ).
-عند الاستشهاد بالقرآن، اذكر الآية الكريمة واسم السورة، واشرح المعنى واللطيفة الإيمانية بوضوح.
-كن ذكياً، مختصراً، واثقاً، وتحدث كإنسان حقيقي مفكر وناصح.`;
+    const systemInstruction = `أنت المساعد الذكي وخبير التدبر القرآني والعلوم الإسلامية في منصة ترتيل AI.
+تحدث تماماً مثل Gemini بأسلوب إنساني حقيقي، ذكي، فصيح، ودود، رزين وعميق.
+أنت تجيب عن أي سؤال يطرحه المستخدم (سواء كان في العقيدة، التفسير، تدبر الآيات، أسباب النزول، أحكام التجويد، أو أي نقاش إنساني وفكري) بإجابة مباشرة، علمية، شافية وذكية بدون أي مقدمات شكلية أو قوالب مكررة.
+عند الاستشهاد بالقرآن، اذكر الآية الكريمة واسم السورة، واشرح المعنى واللطيفة الإيمانية ببيان واضح.`;
 
     const contents: any[] = [];
     if (Array.isArray(history) && history.length > 0) {
-      for (const h of history.slice(-6)) {
-        contents.push({
-          role: h.role === 'user' ? 'user' : 'model',
-          parts: [{ text: h.text }],
-        });
+      for (const h of history.slice(-8)) {
+        if (h.text && typeof h.text === 'string') {
+          contents.push({
+            role: h.role === 'user' ? 'user' : 'model',
+            parts: [{ text: h.text }],
+          });
+        }
       }
     }
     contents.push({
@@ -570,32 +588,23 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
       parts: [{ text: trimmedMsg }],
     });
 
-    const analyzeResponse = await ai.models.generateContent({
+    const analyzeResponse = await generateGeminiWithRetry(ai, {
       model: 'gemini-3.6-flash',
       contents,
       config: {
         systemInstruction,
-        maxOutputTokens: 1000,
-        temperature: 0.8,
+        maxOutputTokens: 1200,
+        temperature: 0.75,
       },
-    });
+    }, 2);
 
-    const responseText = analyzeResponse.text || 'تأمل في كتاب الله، تجد فيه شفاء لقلبك ونوراً لدربك.';
+    const responseText = analyzeResponse?.text || 'أهلاً بك! تفضل بطرح أي سؤال وسأجيبك بعمق وتفصيل.';
     res.json({ text: responseText });
   } catch (error: any) {
-    console.warn('Assistant chat fallback triggered:', error?.message || error);
-    try {
-      const { generateSmartConversationalReply } = await import('./services/QuranKnowledgeEngine.js');
-      const dynamicReply = await generateSmartConversationalReply(req.body?.message || '', req.body?.history || []);
-      res.json({ text: dynamicReply });
-    } catch {
-      res.json({
-        text: `### 📖 هدايات وتدبر القرآن الكريم
-
-أهلاً بك يا رفيق القرآن. القرآن الكريم كتاب هداية ونور، وتدبر آياته يثبت الإيمان ويشرح الصدر.
-يمكنك تصفح السور في مصحف المدينة أو تسميع وردك الغيبي مع المعلم. ما هي الآية أو السورة التي ترغب في تدبرها الآن؟`,
-      });
-    }
+    console.error('Assistant chat error:', error);
+    res.json({
+      text: `عذراً، محرك الذكاء الاصطناعي مشغول حالياً بسبب ضغط الاستخدام. يرجى الانتظار بضع ثوانٍ وإعادة إرسال سؤالك وسأجيبك فوراً.`,
+    });
   }
 });
 
