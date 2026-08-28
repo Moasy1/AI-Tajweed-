@@ -8,6 +8,7 @@ import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { getSupabase, isSupabaseConnected } from './db/supabase.js';
 import { mushafRouter } from './mushaf-routes.js';
+import { geminiPool } from './services/GeminiPoolManager.js';
 
 export const app = express();
 
@@ -175,17 +176,7 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
   try {
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
 
-    const { GoogleGenAI, Type } = await import('@google/genai');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.json(generateDeterministicTajweed(targetSurah, targetAyah, referenceText));
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-    });
-
+    const { Type } = await import('@google/genai');
     const mimeType = req.file.mimetype === 'application/octet-stream'
       ? 'audio/webm'
       : (req.file.mimetype || 'audio/webm');
@@ -215,45 +206,49 @@ app.post('/api/analyze-tajweed', aiLimiter, upload.single('audio'), async (req, 
    - summary: ملخص فني موجز لأبرز نقاط القوة ومواضع التحسين في التلاوة.
 3. أعد النتيجة بصيغة JSON مطابقة للمخطط المحدد بدقة.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
-            { text: promptText },
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            surah: { type: Type.STRING },
-            ayah: { type: Type.STRING },
-            score: { type: Type.NUMBER },
-            summary: { type: Type.STRING },
-            words: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  text: { type: Type.STRING },
-                  status: { type: Type.STRING },
-                  category: { type: Type.STRING },
-                  rule: { type: Type.STRING },
-                  suggestion: { type: Type.STRING },
-                  accuracy: { type: Type.NUMBER },
+    const audioBase64 = req.file.buffer.toString('base64');
+
+    const response = await geminiPool.executeWithPool(async (ai) => {
+      return await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType, data: audioBase64 } },
+              { text: promptText },
+            ],
+          },
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              surah: { type: Type.STRING },
+              ayah: { type: Type.STRING },
+              score: { type: Type.NUMBER },
+              summary: { type: Type.STRING },
+              words: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    text: { type: Type.STRING },
+                    status: { type: Type.STRING },
+                    category: { type: Type.STRING },
+                    rule: { type: Type.STRING },
+                    suggestion: { type: Type.STRING },
+                    accuracy: { type: Type.NUMBER },
+                  },
+                  required: ['text', 'status', 'category', 'rule', 'suggestion', 'accuracy'],
                 },
-                required: ['text', 'status', 'category', 'rule', 'suggestion', 'accuracy'],
               },
             },
+            required: ['surah', 'ayah', 'score', 'words'],
           },
-          required: ['surah', 'ayah', 'score', 'words'],
         },
-      },
+      });
     });
 
     let resultText = response.text;
@@ -294,18 +289,7 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
   try {
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
 
-    const { GoogleGenAI, Type } = await import('@google/genai');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      const fallback = generateDeterministicTeacher(targetSurah, targetAyah, referenceText);
-      return res.json({ text: fallback.dialogue, ...fallback });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-    });
-
+    const { Type } = await import('@google/genai');
     const mimeType = req.file.mimetype === 'application/octet-stream'
       ? 'audio/webm'
       : (req.file.mimetype || 'audio/webm');
@@ -328,35 +312,39 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
 4. استخراج الكلمات المنسية أو المستبدلة إن وجدت.
 5. أعد النتيجة بصيغة JSON مطابقة للمخطط.`;
 
-    const analyzeResponse = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { inlineData: { mimeType, data: req.file.buffer.toString('base64') } },
-            { text: teacherPrompt },
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            dialogue: { type: Type.STRING, description: 'كلام المعلم الحواري المشجع والتوجيهي للطالب' },
-            memorizationScore: { type: Type.NUMBER, description: 'نسبة ثبات الحفظ من 100' },
-            status: { type: Type.STRING, description: 'excellent / good / needs_review' },
-            missedWords: { 
-              type: Type.ARRAY, 
-              items: { type: Type.STRING },
-              description: 'الكلمات التي نسيها الطالب أو أخطأ في قراءتها غيباً' 
-            },
-            teacherAdvice: { type: Type.STRING, description: 'نصيحة المعلم لتثبيت الحفظ' }
+    const audioBase64 = req.file.buffer.toString('base64');
+
+    const analyzeResponse = await geminiPool.executeWithPool(async (ai) => {
+      return await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType, data: audioBase64 } },
+              { text: teacherPrompt },
+            ],
           },
-          required: ['dialogue', 'memorizationScore', 'status'],
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              dialogue: { type: Type.STRING, description: 'كلام المعلم الحواري المشجع والتوجيهي للطالب' },
+              memorizationScore: { type: Type.NUMBER, description: 'نسبة ثبات الحفظ من 100' },
+              status: { type: Type.STRING, description: 'excellent / good / needs_review' },
+              missedWords: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: 'الكلمات التي نسيها الطالب أو أخطأ في قراءتها غيباً' 
+              },
+              teacherAdvice: { type: Type.STRING, description: 'نصيحة المعلم لتثبيت الحفظ' }
+            },
+            required: ['dialogue', 'memorizationScore', 'status'],
+          },
         },
-      },
+      });
     });
 
     let teacherData: any = {};
@@ -377,13 +365,15 @@ app.post('/api/interactive-teacher', aiLimiter, upload.single('audio'), async (r
         .trim()
         .slice(0, 350);
 
-      const ttsResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-tts',
-        contents: [{ parts: [{ text: cleanTtsText }] }],
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
-        },
+      const ttsResponse = await geminiPool.executeWithPool(async (ai) => {
+        return await ai.models.generateContent({
+          model: 'gemini-2.5-flash-preview-tts',
+          contents: [{ parts: [{ text: cleanTtsText }] }],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
+          },
+        });
       });
 
       const base64AudioData = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -523,23 +513,6 @@ app.post('/api/ijazah', async (req, res) => {
 // In-memory cache for assistant answers
 const assistantCache = new Map<string, { text: string; expiry: number }>();
 
-// Helper function to call Gemini with intelligent retry on 429 rate limits
-async function generateGeminiWithRetry(ai: any, params: any, maxRetries = 2): Promise<any> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await ai.models.generateContent(params);
-    } catch (err: any) {
-      const isRateLimit = err?.status === 429 || String(err?.message || '').includes('429') || String(err?.message || '').includes('RESOURCE_EXHAUSTED');
-      if (isRateLimit && attempt < maxRetries) {
-        console.warn(`[Gemini Chat] 429 limit hit, waiting 2s before retry ${attempt + 1}/${maxRetries}...`);
-        await new Promise(r => setTimeout(r, 2000));
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
 // ────────────────────────────────────────────────
 // 6. Global Context-Aware AI Assistant & Tadabbur Co-Pilot
 // ────────────────────────────────────────────────
@@ -553,19 +526,6 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
     const trimmedMsg = message.trim();
     const activePage = pageContext || context?.pathname || 'الرئيسية';
     const activeTitle = pageTitle || context?.pageTitle || 'المنصة القرآنية';
-
-    const { GoogleGenAI } = await import('@google/genai');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.json({
-        text: 'يرجى ضبط مفتاح الذكاء الاصطناعي GEMINI_API_KEY في ملف .env للاستمتاع بالمحادثة الكاملة.',
-      });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-    });
 
     const systemInstruction = `أنت المساعد الذكي وخبير التدبر القرآني والعلوم الإسلامية في منصة ترتيل AI.
 تحدث تماماً مثل Gemini بأسلوب إنساني حقيقي، ذكي، فصيح، ودود، رزين وعميق.
@@ -588,22 +548,24 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
       parts: [{ text: trimmedMsg }],
     });
 
-    const analyzeResponse = await generateGeminiWithRetry(ai, {
-      model: 'gemini-3.6-flash',
-      contents,
-      config: {
-        systemInstruction,
-        maxOutputTokens: 1200,
-        temperature: 0.75,
-      },
-    }, 2);
+    const analyzeResponse = await geminiPool.executeWithPool(async (ai) => {
+      return await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents,
+        config: {
+          systemInstruction,
+          maxOutputTokens: 1200,
+          temperature: 0.75,
+        },
+      });
+    });
 
     const responseText = analyzeResponse?.text || 'أهلاً بك! تفضل بطرح أي سؤال وسأجيبك بعمق وتفصيل.';
     res.json({ text: responseText });
   } catch (error: any) {
     console.error('Assistant chat error:', error);
     res.json({
-      text: `عذراً، محرك الذكاء الاصطناعي مشغول حالياً بسبب ضغط الاستخدام. يرجى الانتظار بضع ثوانٍ وإعادة إرسال سؤالك وسأجيبك فوراً.`,
+      text: `عذراً، حدث ضغط لحظي على محركات الذكاء الاصطناعي. يرجى إعادة إرسال سؤالك وسأجيبك فوراً.`,
     });
   }
 });
@@ -640,24 +602,15 @@ app.post('/api/assistant/tts', aiLimiter, async (req, res) => {
       return res.json({ audio: cached.audio, cached: true });
     }
 
-    const { GoogleGenAI } = await import('@google/genai');
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(503).json({ error: 'No API key configured' });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-    });
-
-    const ttsResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-tts',
-      contents: [{ parts: [{ text: cleanSpeechText }] }],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } } },
-      },
+    const ttsResponse = await geminiPool.executeWithPool(async (ai) => {
+      return await ai.models.generateContent({
+        model: 'gemini-2.5-flash-preview-tts',
+        contents: [{ parts: [{ text: cleanSpeechText }] }],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } } },
+        },
+      });
     });
 
     const base64AudioData = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
