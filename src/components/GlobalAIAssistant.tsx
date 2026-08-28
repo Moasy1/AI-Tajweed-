@@ -307,7 +307,7 @@ export default function GlobalAIAssistant() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 left-6 z-50 group flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-full shadow-2xl shadow-teal-700/40 transition-all duration-300 hover:scale-105 active:scale-95 border-2 border-white/30"
+          className="fixed bottom-20 sm:bottom-6 left-4 sm:left-6 z-50 group flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-full shadow-2xl shadow-teal-700/40 transition-all duration-300 hover:scale-105 active:scale-95 border-2 border-white/30"
           aria-label="الموجه القرآني الذكي"
         >
           <div className="relative">
@@ -326,8 +326,8 @@ export default function GlobalAIAssistant() {
         <div
           className={`fixed z-50 transition-all duration-300 flex flex-col font-sans ${
             isMinimized
-              ? 'bottom-6 left-6 w-80 h-16 bg-white rounded-2xl shadow-2xl border border-slate-200'
-              : 'bottom-4 left-4 right-4 sm:right-auto sm:left-6 sm:w-[440px] h-[600px] max-h-[88vh] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden'
+              ? 'bottom-20 sm:bottom-6 left-4 sm:left-6 w-80 h-16 bg-white rounded-2xl shadow-2xl border border-slate-200'
+              : 'bottom-20 sm:bottom-4 left-3 right-3 sm:right-auto sm:left-6 sm:w-[440px] h-[520px] max-h-[75vh] sm:h-[600px] sm:max-h-[88vh] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden'
           }`}
         >
           {/* Header */}
