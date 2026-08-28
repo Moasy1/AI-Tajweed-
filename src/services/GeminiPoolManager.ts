@@ -28,7 +28,7 @@ class GeminiPoolManager {
       .filter(k => k.length > 5);
 
     const builtinEncoded = [
-      'QWl6YVN5REhtNFFNRUNQeUNyZWt6RWZxVXQ0MFpDX2RzWVBMTmNV',
+      'QVEuQWI4Uk42SlBJV2NFZEJoRmxqMi0yWm9ob0RLZlNEZksxdldmUjNaQXV1MHRpVEtZSEE=',
       'QWl6YVN5RHNnWlM2WnBUa3RWNlNjcXdSZVpCSFd3SFRxSHA4R2Nj',
       'QVEuQWI4Uk42SkxTR1htblJrMExDdFlnam5IUW8tSTJfNW8zMW1tRnlUN1FhbklocUE3dFE='
     ];
