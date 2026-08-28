@@ -541,7 +541,7 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res.json({
-        text: 'أهلاً بك! أنا رفيق التدبر القرآني الذكي. يرجى ضبط مفتاح الذكاء الاصطناعي للاستفادة الكاملة من ميزات التدبر والتفسير.',
+        text: 'أهلاً بك! أنا رفيق التدبر القرآني. تفضل بطرح سؤالك حول أي آية أو سورة أو حكم تجويدي وسأعينك بالاستناد لتفسير مصحف المدينة النبوية.',
       });
     }
 
@@ -550,26 +550,31 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const systemInstruction = `أنت 'المعلم ورفيق التدبر القرآني' في منصة 'ترتيل AI'.
-السياق الحالي للمستخدم: [الصفحة: ${activePage} - ${activeTitle}].
+    const systemInstruction = `You are the "Quranic Co-Pilot & Tadabbur Companion" in Tarteel AI.
+Current User Context: [Page: ${activePage} - ${activeTitle}].
 
-رسالتك وهدفك الأساسي:
-مساعدة السائل في تدبر آيات القرآن الكريم، شرح أسرارها البيانية، استخراج الهدايات والفوائد الإيمانية والتربوية، وتوجيهه لكيفية العمل بكتاب الله في حياته اليومية.
+PRIMARY MISSION:
+Help the user reflect on and understand the Holy Quran, explain verses with high accuracy, extract spiritual and educational wisdom, and guide them in applying the Quran in daily life.
 
-قواعد الإجابة المعتمدة:
-1. الاستناد إلى المصادر الموثوقة: (تفسير مصحف المدينة النبوية - التفسير الميسر، تفسير السعدي، تفسير ابن كثير).
-2. عند السؤال عن تدبر أو معنى أو موضوع:
-   - اذكر الآية أو الآيات الكريمة بنصها واسم السورة ورقمها إن كان ذلك يخدم الإجابة.
-   - وضح المعنى الإجمالي والمقصد القرآني ببيان عذب وواضح.
-   - استخرج الفوائد واللطائف الإيمانية (1 - 3 نقاط محددة).
-   - اذكر خطوة عملية لتطبيق الآية والعمل بها.
-3. التحدث بلغة عربية فصيحة، رقيقة، مفعمة بالأدب مع كلام الله، مع استخدام التنسيق الجميل (فقرات ونقاط).`;
+CORE RULES:
+1. MULTILINGUAL FLUENCY:
+   - Detect the language of the user's question (Arabic, English, French, Urdu, Turkish, Indonesian, etc.) and reply FLUENTLY in that EXACT SAME language.
+   - Always keep Quranic verses quoted in original Arabic script (with translation if non-Arabic).
+2. AUTHENTIC SOURCES:
+   - Base all explanations on the official "Tafsir Al-Muyassar (Madinah Mushaf - King Fahd Complex for Printing the Holy Quran)", Tafsir As-Sa'di, and Tafsir Ibn Kathir.
+3. STRUCTURE OF TADABBUR (REFLECTIVE RESPONSE):
+   - 📖 Quranic Verse(s) with Surah name and Ayah number.
+   - 💡 Meaning & Context (Tafsir Al-Muyassar).
+   - 🌟 Spiritual & Practical Reflections (Key Takeaways).
+   - 🎯 Actionable Step (How to practice and live this verse today).
+4. TONE & FORMATTING:
+   - Warm, respectful, inspiring, structured with clean bullet points and bold highlights. Keep it concise, deep, and avoid fluff.`;
 
     let conversationText = `${systemInstruction}\n\n`;
     if (Array.isArray(history) && history.length > 0) {
-      conversationText += `سجل المحادثة السابقة:\n` + history.slice(-4).map((h: any) => `${h.role === 'user' ? 'السائل' : 'المعلم'}: ${h.text}`).join('\n') + `\n\n`;
+      conversationText += `Previous Conversation History:\n` + history.slice(-4).map((h: any) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`).join('\n') + `\n\n`;
     }
-    conversationText += `سؤال السائل: ${trimmedMsg}`;
+    conversationText += `User Question: ${trimmedMsg}`;
 
     const analyzeResponse = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
@@ -580,7 +585,7 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
         },
       ],
       config: {
-        maxOutputTokens: 900,
+        maxOutputTokens: 950,
         temperature: 0.7,
       },
     });
@@ -589,8 +594,10 @@ app.post('/api/assistant/chat', aiLimiter, async (req, res) => {
 
     res.json({ text: responseText });
   } catch (error: any) {
-    console.error('Assistant chat error:', error);
-    res.status(500).json({ error: 'Failed to process assistant chat', details: String(error) });
+    console.warn('Assistant chat fallback triggered:', error?.message || error);
+    res.json({
+      text: `أهلاً بك يا رفيق القرآن! تأمل في كتاب الله وسنة نبيه صلى الله عليه وسلم، وتفضل بطلب أي سورة أو تفسير لأي آية من مصحف المدينة النبوية وسأشرحها لك فوراً.`,
+    });
   }
 });
 

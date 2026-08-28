@@ -159,12 +159,47 @@ export default function InteractiveTeacher() {
     return surah.ayahs.slice(sliceStart, sliceEnd).map(a => a.text).join(' ');
   }, [surah, startAyah, endAyah]);
 
+  function replaceNumbersWithArabicWords(text: string): string {
+    return text
+      .replace(/\b1-5\b/g, 'من الأولى إلى الخامسة')
+      .replace(/\b6-10\b/g, 'من السادسة إلى العاشرة')
+      .replace(/\b11-15\b/g, 'من الحادية عشرة إلى الخامسة عشرة')
+      .replace(/\b16-20\b/g, 'من السادسة عشرة إلى العشرين')
+      .replace(/\b21-25\b/g, 'من الواحدة والعشرين إلى الخامسة والعشرين')
+      .replace(/\b26-30\b/g, 'من السادسة والعشرين إلى الثلاثين')
+      .replace(/\b1\b/g, 'الأولى')
+      .replace(/\b2\b/g, 'الثانية')
+      .replace(/\b3\b/g, 'الثالثة')
+      .replace(/\b4\b/g, 'الرابعة')
+      .replace(/\b5\b/g, 'الخامسة')
+      .replace(/\b6\b/g, 'السادسة')
+      .replace(/\b7\b/g, 'السابعة')
+      .replace(/\b8\b/g, 'الثامنة')
+      .replace(/\b9\b/g, 'التاسعة')
+      .replace(/\b10\b/g, 'العاشرة');
+  }
+
   const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      const cleanArabicText = replaceNumbersWithArabicWords(text);
+      const utterance = new SpeechSynthesisUtterance(cleanArabicText);
       utterance.lang = 'ar-SA';
-      utterance.rate = 0.92;
+      
+      const voices = window.speechSynthesis.getVoices();
+      const arabicVoice = voices.find(v => 
+        v.lang.startsWith('ar') || 
+        v.name.toLowerCase().includes('arabic') || 
+        v.name.includes('Maged') || 
+        v.name.includes('Tarik') || 
+        v.name.includes('Laila') || 
+        v.name.includes('Salma') || 
+        v.name.includes('Hoda') || 
+        v.name.includes('Naayf')
+      );
+      if (arabicVoice) utterance.voice = arabicVoice;
+      
+      utterance.rate = 0.9;
       utterance.onend = () => setIsTeacherAudioPlaying(false);
       utterance.onerror = () => setIsTeacherAudioPlaying(false);
       setIsTeacherAudioPlaying(true);
