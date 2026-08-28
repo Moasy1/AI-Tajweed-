@@ -70,6 +70,9 @@ export default function KidsMode() {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         const formData = new FormData();
         formData.append('audio', blob, 'kids_recitation.webm');
+        formData.append('surah', 'الإخلاص');
+        formData.append('ayah', '1');
+        formData.append('reference_text', 'قُلْ هُوَ اللَّهُ أَحَدٌ');
 
         try {
           const response = await fetch('/api/analyze-tajweed', {
